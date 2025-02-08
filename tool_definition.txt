@@ -52,7 +52,7 @@
             description: "The text you want to add."
           },
         },
-        required: ["text", "addedParagraph"],
+        required: ["textBefore", "addedParagraph"],
       },
     }
   ]

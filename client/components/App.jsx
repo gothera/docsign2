@@ -11,6 +11,7 @@ export default function App() {
   const [dataChannel, setDataChannel] = useState(null);
   const [documentContent, setDocumentContent] = useState(null);
   const peerConnection = useRef(null);
+  const audioElement = useRef(null);
 
   async function startSession() {
     const tokenResponse = await fetch("/token");
@@ -19,6 +20,17 @@ export default function App() {
 
     const pc = new RTCPeerConnection();
     
+    // Set up to play remote audio from the model
+    audioElement.current = document.createElement("audio");
+    audioElement.current.autoplay = true;
+    pc.ontrack = (e) => (audioElement.current.srcObject = e.streams[0]);
+
+    // Add local audio track for microphone input in the browser
+    const ms = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+    });
+    pc.addTrack(ms.getTracks()[0]);
+
     // Set up data channel for sending and receiving events
     const dc = pc.createDataChannel("oai-events");
     setDataChannel(dc);

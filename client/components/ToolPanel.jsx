@@ -2,49 +2,64 @@ import { useEffect, useState } from "react";
 
 const sessionUpdate = {
   type: "session.update",
-  instructions: documentContent,
   session: {
     tools: [
       {
         type: "function",
         name: "edit_paragraph",
-        description: "Edit the content of the document",
+        description: "Edit the content of a single paragraph",
         parameters: {
           type: "object",
           strict: true,
           properties: {
-            changes: {
+            oldParagraph: {
               type: "string",
-              description: "A detailed description of the changes that should be made: what should be added, what should be replaced, what should be removed and so on.",
+              description: "The text of the paragraph you want to change"
             },
-            paragraph: {
-              type: "[]int",
-              description: "An explicit description of the paragraph or paragraphs that should be edited. This should make it easy to identify them.",
-            }
+            newParagraph: {
+              type: "string",
+              description: "The text of the new paragraph",
+            },
           },
-          required: ["paragraph", "changes"],
+          required: ["oldParagraph", "newParagraph"],
         },
       },
       {
         type: "function",
-        name: "edit_table",
-        description: "Edit the content of a table inside the document",
+        name: "delete_text",
+        description: "Delete some text",
         parameters: {
           type: "object",
           strict: true,
           properties: {
-            table_description: {
+            text: {
               type: "string",
-              description: "A clear description for the table that should be modified in order to correctly and exactly identify it.",
+              description: "The text you want to delete."
             },
-            content: {
-              type: "string",
-              description: "New content to insert",
-            }
           },
-          required: ["table_description", "content"],
-        },
+          required: ["text"],
+        }
       },
+      {
+        type: "function",
+        name: "add_paragraph",
+        description: "add a paragraph at a point defined by sentences before that",
+        parameters: {
+          type: "object",
+          strict: true,
+          properties: {
+            textBefore: {
+              type: "string",
+              description: "The text after which you want to add the paragraph"
+            },
+            addedParagraph: {
+              type: "string",
+              description: "The text you want to add."
+            },
+          },
+          required: ["text", "addedParagraph"],
+        },
+      }
     ],
     tool_choice: "auto",
   },
@@ -82,6 +97,10 @@ export default function ToolPanel({
     const firstEvent = events[events.length - 1];
     if (!functionAdded && firstEvent.type === "session.created") {
       // sessionUpdate.tools[0].description = documentContent
+      if (documentContent !== "") {
+        sessionUpdate.session.instructions = "This is the content of a document: " + JSON.stringify(documentContent)
+        console.log("Dada", sessionUpdate)
+      }
       sendClientEvent(sessionUpdate);
       setFunctionAdded(true);
     }
@@ -92,6 +111,9 @@ export default function ToolPanel({
       mostRecentEvent.response.output
     ) {
       mostRecentEvent.response.output.forEach((output) => {
+        {
+          console.log(output, "Dada")  
+        }
         if (
           output.type === "function_call" &&
           output.name === "edit_document"

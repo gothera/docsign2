@@ -1,0 +1,17 @@
+curl -X 'POST' \
+  'http://localhost:8000/function-call' \
+  -H 'Content-Type: application/json' \
+  -d '{"document_id": "../data/testLongText.docx", "function_name": "editParagraph", "arguments": {"oldParagraph": "value", "Introduction to Document Manipulation in Python": "This text was replaced"}}'
+
+
+resp = await fetch('http://localhost:8000/function-call', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        document_id: "../data/testLongText.docx",
+        function_name: "editParagraph",
+        arguments: {oldParagraph: "Introduction to Document Manipulation in Python",  newParagraph: "This text was replaced"}
+      })
+    })

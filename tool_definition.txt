@@ -1,7 +1,7 @@
 [
     {
       type: "function",
-      name: "edit_paragraph",
+      name: "editParagraph",
       description: "Edit the content of a single paragraph",
       parameters: {
         type: "object",
@@ -21,7 +21,7 @@
     },
     {
       type: "function",
-      name: "delete_text",
+      name: "deleteText",
       description: "Delete some text",
       parameters: {
         type: "object",
@@ -37,7 +37,7 @@
     },
     {
       type: "function",
-      name: "add_paragraph",
+      name: "addParagraph",
       description: "add a paragraph at a point defined by sentences before that",
       parameters: {
         type: "object",

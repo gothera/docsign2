@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from documentEditor import DocEditor
@@ -25,7 +25,7 @@ NEW_PARAGRAPH = 'newParagraph'
 app = FastAPI()
 
 @app.post("/function-call")
-async def call_function(document_id: str, function_name: str, arguments: dict):
+async def call_function(document_id: str = Body(...), function_name: str = Body(...), arguments: dict = Body(...)):
     try:
         editor = DocEditor(document_id)
     except Exception as e:
@@ -37,12 +37,16 @@ async def call_function(document_id: str, function_name: str, arguments: dict):
         
         oldParagraph, newParagraph = arguments[OLD_PARAGRAPH], arguments[NEW_PARAGRAPH]
         editor.replaceText(oldParagraph, newParagraph, save=True)
+        return
     elif function_name == ADD_PARAGRAPH:
-        return {}
+        pass
     elif function_name == DELETE_TEXT:
-        return {}
+        pass
+    else:
+        raise HTTPException(status_code=400, detail=f"function_name must be in {[EDIT_PARAGRAPH, DELETE_TEXT, ADD_PARAGRAPH]}")
 
-    raise HTTPException(status_code=400, detail=f"function_name must be in {[EDIT_PARAGRAPH, DELETE_TEXT, ADD_PARAGRAPH]}")
+    return {'document_id': document_id}
+
 
 @app.get("/token")
 async def get_token():

@@ -1,35 +1,51 @@
 import { useEffect, useState } from "react";
 
-const functionDescription = `
-Call this function when a user asks for a color palette.
-`;
-
 const sessionUpdate = {
   type: "session.update",
   session: {
     tools: [
       {
         type: "function",
-        name: "display_color_palette",
-        description: functionDescription,
+        name: "edit_document",
+        description: "Edit the content of the document",
         parameters: {
           type: "object",
           strict: true,
           properties: {
-            theme: {
+            documentType: {
               type: "string",
-              description: "Description of the theme for the color scheme.",
+              enum: ["spreadsheet", "document"],
+              description: "Type of document being edited"
             },
-            colors: {
-              type: "array",
-              description: "Array of five hex color codes based on the theme.",
-              items: {
-                type: "string",
-                description: "Hex color code",
+            operation: {
+              type: "string",
+              enum: ["modify_cell", "modify_paragraph", "add_row", "delete_row", "replace_text"],
+              description: "Type of edit operation to perform",
+            },
+            location: {
+              type: "object",
+              properties: {
+                sheetName: { 
+                  type: "string",
+                  description: "Name of the sheet to edit (for spreadsheets only)"
+                },
+                row: { 
+                  type: "number",
+                  description: "Row number (for spreadsheets) or paragraph number (for documents)"
+                },
+                column: { 
+                  type: "number",
+                  description: "Column number (for spreadsheets only)"
+                }
               },
+              description: "Location in the document to perform the edit",
             },
+            content: {
+              type: "string",
+              description: "New content to insert",
+            }
           },
-          required: ["theme", "colors"],
+          required: ["documentType", "operation", "location", "content"],
         },
       },
     ],
@@ -37,25 +53,16 @@ const sessionUpdate = {
   },
 };
 
-function FunctionCallOutput({ functionCallOutput }) {
-  const { theme, colors } = JSON.parse(functionCallOutput.arguments);
-
-  const colorBoxes = colors.map((color) => (
-    <div
-      key={color}
-      className="w-full h-16 rounded-md flex items-center justify-center border border-gray-200"
-      style={{ backgroundColor: color }}
-    >
-      <p className="text-sm font-bold text-black bg-slate-100 rounded-md p-2 border border-black">
-        {color}
-      </p>
-    </div>
-  ));
+function FunctionCallOutput({ functionCallOutput, documentContent }) {
+  const { operation, sheetName, location, content } = JSON.parse(functionCallOutput.arguments);
 
   return (
     <div className="flex flex-col gap-2">
-      <p>Theme: {theme}</p>
-      {colorBoxes}
+      <h3 className="font-bold">Edit Operation</h3>
+      <p>Operation: {operation}</p>
+      <p>Sheet: {sheetName}</p>
+      <p>Location: Row {location.row}, Column {location.column}</p>
+      <p>New Content: {content}</p>
       <pre className="text-xs bg-gray-100 rounded-md p-2 overflow-x-auto">
         {JSON.stringify(functionCallOutput, null, 2)}
       </pre>
@@ -67,6 +74,7 @@ export default function ToolPanel({
   isSessionActive,
   sendClientEvent,
   events,
+  documentContent,
 }) {
   const [functionAdded, setFunctionAdded] = useState(false);
   const [functionCallOutput, setFunctionCallOutput] = useState(null);
@@ -88,17 +96,14 @@ export default function ToolPanel({
       mostRecentEvent.response.output.forEach((output) => {
         if (
           output.type === "function_call" &&
-          output.name === "display_color_palette"
+          output.name === "edit_document"
         ) {
           setFunctionCallOutput(output);
           setTimeout(() => {
             sendClientEvent({
               type: "response.create",
               response: {
-                instructions: `
-                ask for feedback about the color palette - don't repeat 
-                the colors, just ask if they like the colors.
-              `,
+                instructions: "Ask if they want to make any other changes to the document.",
               },
             });
           }, 500);
@@ -117,12 +122,19 @@ export default function ToolPanel({
   return (
     <section className="h-full w-full flex flex-col gap-4">
       <div className="h-full bg-gray-50 rounded-md p-4">
-        <h2 className="text-lg font-bold">Color Palette Tool</h2>
+        <h2 className="text-lg font-bold">Document Editor Tool</h2>
         {isSessionActive ? (
-          functionCallOutput ? (
-            <FunctionCallOutput functionCallOutput={functionCallOutput} />
+          documentContent ? (
+            functionCallOutput ? (
+              <FunctionCallOutput 
+                functionCallOutput={functionCallOutput}
+                documentContent={documentContent}
+              />
+            ) : (
+              <p>Ask for document edits like "modify cell A1 in Sheet1" or "add a new row"...</p>
+            )
           ) : (
-            <p>Ask for advice on a color palette...</p>
+            <p>Please upload a document first...</p>
           )
         ) : (
           <p>Start the session to use this tool...</p>

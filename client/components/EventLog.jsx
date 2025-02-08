@@ -1,3 +1,4 @@
+// /Users/cosmincojocaru/realitime/openai-realtime-console/client/components/EventLog.jsx
 import { ArrowUp, ArrowDown } from "react-feather";
 import { useState } from "react";
 

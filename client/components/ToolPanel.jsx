@@ -2,50 +2,47 @@ import { useEffect, useState } from "react";
 
 const sessionUpdate = {
   type: "session.update",
+  instructions: documentContent,
   session: {
     tools: [
       {
         type: "function",
-        name: "edit_document",
+        name: "edit_paragraph",
         description: "Edit the content of the document",
         parameters: {
           type: "object",
           strict: true,
           properties: {
-            documentType: {
+            changes: {
               type: "string",
-              enum: ["spreadsheet", "document"],
-              description: "Type of document being edited"
+              description: "A detailed description of the changes that should be made: what should be added, what should be replaced, what should be removed and so on.",
             },
-            operation: {
+            paragraph: {
+              type: "[]int",
+              description: "An explicit description of the paragraph or paragraphs that should be edited. This should make it easy to identify them.",
+            }
+          },
+          required: ["paragraph", "changes"],
+        },
+      },
+      {
+        type: "function",
+        name: "edit_table",
+        description: "Edit the content of a table inside the document",
+        parameters: {
+          type: "object",
+          strict: true,
+          properties: {
+            table_description: {
               type: "string",
-              enum: ["modify_cell", "modify_paragraph", "add_row", "delete_row", "replace_text"],
-              description: "Type of edit operation to perform",
-            },
-            location: {
-              type: "object",
-              properties: {
-                sheetName: { 
-                  type: "string",
-                  description: "Name of the sheet to edit (for spreadsheets only)"
-                },
-                row: { 
-                  type: "number",
-                  description: "Row number (for spreadsheets) or paragraph number (for documents)"
-                },
-                column: { 
-                  type: "number",
-                  description: "Column number (for spreadsheets only)"
-                }
-              },
-              description: "Location in the document to perform the edit",
+              description: "A clear description for the table that should be modified in order to correctly and exactly identify it.",
             },
             content: {
               type: "string",
               description: "New content to insert",
             }
           },
-          required: ["documentType", "operation", "location", "content"],
+          required: ["table_description", "content"],
         },
       },
     ],
@@ -84,6 +81,7 @@ export default function ToolPanel({
 
     const firstEvent = events[events.length - 1];
     if (!functionAdded && firstEvent.type === "session.created") {
+      // sessionUpdate.tools[0].description = documentContent
       sendClientEvent(sessionUpdate);
       setFunctionAdded(true);
     }
@@ -98,6 +96,7 @@ export default function ToolPanel({
           output.type === "function_call" &&
           output.name === "edit_document"
         ) {
+          console.log(output, "dada")
           setFunctionCallOutput(output);
           setTimeout(() => {
             sendClientEvent({

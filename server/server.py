@@ -26,8 +26,9 @@ app = FastAPI()
 
 @app.post("/function-call")
 async def call_function(document_id: str = Body(...), function_name: str = Body(...), arguments: dict = Body(...)):
+    outputFileName = document_id[:-5] + '_output.docx'
     try:
-        editor = DocEditor(document_id)
+        editor = DocEditor(document_id, outputFileName=outputFileName)
     except Exception as e:
         return HTTPException(status_code=400, detail=f'document_id must be a valid path (exception: {e})')
     
@@ -45,7 +46,7 @@ async def call_function(document_id: str = Body(...), function_name: str = Body(
     else:
         raise HTTPException(status_code=400, detail=f"function_name must be in {[EDIT_PARAGRAPH, DELETE_TEXT, ADD_PARAGRAPH]}")
 
-    return {'document_id': document_id}
+    return {'document_id': outputFileName}
 
 
 @app.get("/token")

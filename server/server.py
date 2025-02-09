@@ -1,9 +1,12 @@
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body, Response
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from documentEditor import DocEditor
 import httpx
 import os
+import base64
+
 
 
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -24,11 +27,21 @@ NEW_PARAGRAPH = 'newParagraph'
 # app = FastAPI(lifespan=lifespan)
 app = FastAPI()
 
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Your React app's origin
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.post("/function-call")
 async def call_function(document_id: str = Body(...), function_name: str = Body(...), arguments: dict = Body(...)):
+    print(arguments)
     outputFileName = document_id[:-5] + '_output.docx'
     try:
-        editor = DocEditor(document_id, outputFileName=outputFileName)
+        editor = DocEditor(document_id, debug=True, outputFileName=outputFileName)
     except Exception as e:
         return HTTPException(status_code=400, detail=f'document_id must be a valid path (exception: {e})')
     
@@ -38,7 +51,6 @@ async def call_function(document_id: str = Body(...), function_name: str = Body(
         
         oldParagraph, newParagraph = arguments[OLD_PARAGRAPH], arguments[NEW_PARAGRAPH]
         editor.replaceText(oldParagraph, newParagraph, save=True)
-        return
     elif function_name == ADD_PARAGRAPH:
         pass
     elif function_name == DELETE_TEXT:
@@ -46,7 +58,16 @@ async def call_function(document_id: str = Body(...), function_name: str = Body(
     else:
         raise HTTPException(status_code=400, detail=f"function_name must be in {[EDIT_PARAGRAPH, DELETE_TEXT, ADD_PARAGRAPH]}")
 
-    return {'document_id': outputFileName}
+    # Read and return the output document as binary
+    try:
+        with open(outputFileName, 'rb') as doc_file:
+            document_bytes = doc_file.read()
+            base64_encoded = base64.b64encode(document_bytes).decode('utf-8')
+            return {
+                'content': base64_encoded
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read output document: {str(e)}")
 
 
 @app.get("/token")

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import 'fs'
 
 const sessionUpdate = {
   type: "session.update",
@@ -14,11 +15,11 @@ const sessionUpdate = {
           properties: {
             oldParagraph: {
               type: "string",
-              description: "The text of the paragraph you want to change"
+              description: "The text of the paragraph you want to change. This should contain only the pure text of the old paragraphs, without tags like <h2>, <p>, </p>, etc."
             },
             newParagraph: {
               type: "string",
-              description: "The text of the new paragraph",
+              description: "The text of the new paragraph.",
             },
           },
           required: ["oldParagraph", "newParagraph"],
@@ -66,15 +67,9 @@ const sessionUpdate = {
 };
 
 function FunctionCallOutput({ functionCallOutput, documentContent }) {
-  const { operation, sheetName, location, content } = JSON.parse(functionCallOutput.arguments);
-
   return (
     <div className="flex flex-col gap-2">
       <h3 className="font-bold">Edit Operation</h3>
-      <p>Operation: {operation}</p>
-      <p>Sheet: {sheetName}</p>
-      <p>Location: Row {location.row}, Column {location.column}</p>
-      <p>New Content: {content}</p>
       <pre className="text-xs bg-gray-100 rounded-md p-2 overflow-x-auto">
         {JSON.stringify(functionCallOutput, null, 2)}
       </pre>
@@ -87,6 +82,7 @@ export default function ToolPanel({
   sendClientEvent,
   events,
   documentContent,
+  setDocumentContent
 }) {
   const [functionAdded, setFunctionAdded] = useState(false);
   const [functionCallOutput, setFunctionCallOutput] = useState(null);
@@ -116,18 +112,76 @@ export default function ToolPanel({
         }
         if (
           output.type === "function_call" &&
-          output.name === "edit_document"
+          output.name === "edit_paragraph"
         ) {
-          console.log(output, "dada")
           setFunctionCallOutput(output);
-          setTimeout(() => {
-            sendClientEvent({
-              type: "response.create",
-              response: {
-                instructions: "Ask if they want to make any other changes to the document.",
-              },
-            });
-          }, 500);
+          // setTimeout(() => {
+          //   sendClientEvent({
+          //     type: "response.create",
+          //     response: {
+          //       instructions: "Ask if they want to make any other changes to the document.",
+          //     },
+          //   });
+          // }, 500);
+          const {newParagraph} = JSON.parse(output.arguments);
+          const {oldParagraph} = JSON.parse(output.arguments);
+          (async () => {
+            try {
+              const resp = await fetch('http://localhost:8000/function-call', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  document_id: "/Users/cosmincojocaru/docsign2/startup.docx",
+                  function_name: "editParagraph",
+                  arguments: {
+                    oldParagraph: oldParagraph,
+                    newParagraph: newParagraph
+                  }
+                })
+              });
+              
+              const data = await resp.json();
+              const mammoth = await import('mammoth');
+              const options = {
+                styleMap: [
+                  "p[style-name='Heading 1'] => h1:fresh",
+                  "p[style-name='Heading 2'] => h2:fresh",
+                  "p[style-name='Heading 3'] => h3:fresh",
+                  "p[style-name='Normal'] => p:fresh",
+                  "table => table.doc-table",
+                  "r[style-name='Strong'] => strong:fresh",
+                  "r[style-name='Emphasis'] => em:fresh",
+                  "p[style-name='List Paragraph'] => li:fresh"
+                ],
+                convertImage: mammoth.images.imgElement(function(image) {
+                  return image.read("base64").then(function(imageBuffer) {
+                    return {
+                      src: "data:" + image.contentType + ";base64," + imageBuffer
+                    };
+                  });
+                })
+              };
+              // Convert base64 to binary data
+              const byteCharacters = atob(data.content);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) {
+                  byteNumbers[i] = byteCharacters.charCodeAt(i);
+              }
+              const byteArray = new Uint8Array(byteNumbers);
+              console.log('Received document content:', byteArray);
+              const result = await mammoth.default.convertToHtml({ arrayBuffer: byteArray.buffer }, options);
+              const documentData = {
+                type: 'document',
+                content: result.value,
+                messages: result.messages
+              };
+              setDocumentContent(documentData);
+            } catch (error) {
+              console.error('Error:', error);
+            }
+          })();
         }
       });
     }

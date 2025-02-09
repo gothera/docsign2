@@ -132,6 +132,7 @@ export default function App() {
             events={events}
             isSessionActive={isSessionActive}
             documentContent={documentContent}
+            setDocumentContent={setDocumentContent}
           />
         </section>
       </main>

@@ -94,7 +94,7 @@ export default function ToolPanel({
     if (!functionAdded && firstEvent.type === "session.created") {
       // sessionUpdate.tools[0].description = documentContent
       if (documentContent !== "") {
-        sessionUpdate.session.instructions = "This is the content of a document: " + JSON.stringify(documentContent)
+        sessionUpdate.session.instructions = "This is the content of a document: " + documentContent.content
         console.log("Dada", sessionUpdate)
       }
       sendClientEvent(sessionUpdate);

@@ -1,14 +1,31 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { FileText } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { Document, Page, pdfjs } from 'react-pdf';
+
+if (typeof window !== 'undefined') {
+  pdfjs.GlobalWorkerOptions.workerSrc = '/Users/cosmincojocaru/docsign2/public/pdfjs/pdf.worker.min.js';
+}
+
 
 function DocumentViewer({ documentContent, onDocumentUpload }) {
   const fileInputRef = useRef(null);
+  const canvasRef = useRef();
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfUrl, setPdfUrl] = useState(null);
   const [isConverting, setIsConverting] = useState(false);
   const documentRef = useRef(null);
 
+    // PDF specific states
+    const [numPages, setNumPages] = useState(null);
+    const [pageNumber, setPageNumber] = useState(1);
+    const [scale, setScale] = useState(1.0);
+    const [boxes, setBoxes] = useState({});  // Boxes stored by page number
+    const [isDrawing, setIsDrawing] = useState(false);
+    const [startPoint, setStartPoint] = useState(null);
+    const [currentBox, setCurrentBox] = useState(null);
+    const pageRefs = useRef({});
+  
   const convertToPdf = async () => {
     if (!documentContent || !documentRef.current) return;
     
@@ -39,6 +56,131 @@ function DocumentViewer({ documentContent, onDocumentUpload }) {
       setIsConverting(false);
     }
   };
+
+  const onDocumentLoadSuccess = ({ numPages }) => {
+    console.log('PDF loaded successfully');
+    setNumPages(numPages);
+    // Initialize boxes state for all pages
+    const initialBoxes = {};
+    for (let i = 1; i <= numPages; i++) {
+      initialBoxes[i] = [];
+    }
+    setBoxes(initialBoxes);
+  };
+
+  const onDocumentLoadError = (error) => {
+    console.error('Error loading PDF:', error);
+    // You might want to show an error message to the user here
+  };
+
+  const startDrawing = (e, pageNumber) => {
+    const pageDiv = pageRefs.current[pageNumber];
+    if (!pageDiv) return;
+
+    const rect = pageDiv.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / scale;
+    const y = (e.clientY - rect.top) / scale;
+
+    setIsDrawing(true);
+    setStartPoint({ x, y, pageNumber });
+  };
+
+  const draw = (e, pageNumber) => {
+    if (!isDrawing || !startPoint || startPoint.pageNumber !== pageNumber) return;
+
+    const pageDiv = pageRefs.current[pageNumber];
+    if (!pageDiv) return;
+
+    const rect = pageDiv.getBoundingClientRect();
+    const currentX = (e.clientX - rect.left) / scale;
+    const currentY = (e.clientY - rect.top) / scale;
+
+    const newBox = {
+      x: Math.min(currentX, startPoint.x),
+      y: Math.min(currentY, startPoint.y),
+      width: Math.abs(currentX - startPoint.x),
+      height: Math.abs(currentY - startPoint.y),
+      pageNumber
+    };
+
+    setCurrentBox(newBox);
+  };
+
+  const stopDrawing = () => {
+    if (isDrawing && currentBox) {
+      const pageBoxes = boxes[currentBox.pageNumber] || [];
+      setBoxes({
+        ...boxes,
+        [currentBox.pageNumber]: [...pageBoxes, currentBox]
+      });
+      
+      // Log the box coordinates with page number
+      console.log('Box added:', {
+        page: currentBox.pageNumber,
+        coordinates: {
+          x: currentBox.x,
+          y: currentBox.y,
+          width: currentBox.width,
+          height: currentBox.height
+        }
+      });
+    }
+    
+    setIsDrawing(false);
+    setCurrentBox(null);
+    setStartPoint(null);
+  };
+
+
+    // Custom page renderer with annotation overlay
+    const renderPage = ({ pageNumber }) => {
+      const pageBoxes = boxes[pageNumber] || [];
+      const isDrawingOnThisPage = currentBox?.pageNumber === pageNumber;
+      
+      return (
+        <div 
+          className="relative"
+          ref={el => pageRefs.current[pageNumber] = el}
+          onMouseDown={e => startDrawing(e, pageNumber)}
+          onMouseMove={e => draw(e, pageNumber)}
+          onMouseUp={stopDrawing}
+          onMouseLeave={stopDrawing}
+        >
+          <Page
+            pageNumber={pageNumber}
+            scale={scale}
+            className="shadow-lg"
+          />
+          <div className="absolute inset-0 pointer-events-none">
+            {/* Render existing boxes */}
+            {pageBoxes.map((box, index) => (
+              <div
+                key={index}
+                className="absolute border-2 border-blue-500 bg-blue-100 bg-opacity-20"
+                style={{
+                  left: box.x * scale,
+                  top: box.y * scale,
+                  width: box.width * scale,
+                  height: box.height * scale
+                }}
+              />
+            ))}
+            {/* Render current box being drawn */}
+            {isDrawingOnThisPage && currentBox && (
+              <div
+                className="absolute border-2 border-blue-500 bg-blue-100 bg-opacity-20"
+                style={{
+                  left: currentBox.x * scale,
+                  top: currentBox.y * scale,
+                  width: currentBox.width * scale,
+                  height: currentBox.height * scale
+                }}
+              />
+            )}
+          </div>
+        </div>
+      );
+    };
 
   // Cleanup URL on unmount
   useEffect(() => {
@@ -321,17 +463,41 @@ function DocumentViewer({ documentContent, onDocumentUpload }) {
         <div className="w-1/2 flex flex-col transition-all duration-300">
           <div className="flex items-center justify-between p-4 border-b border-gray-200">
             <h2 className="text-lg font-semibold">PDF Preview</h2>
-            <button
-              onClick={() => {
-                setShowPdfPreview(false);
-                setPdfUrl(null);
-              }}
-              className="px-3 py-1 text-gray-600 hover:text-gray-800"
-            >
-              ✕
-            </button>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setScale(prev => Math.max(0.5, prev - 0.1))}
+                  className="px-2 py-1 text-sm bg-gray-100 rounded"
+                >
+                  -
+                </button>
+                <span className="text-sm">{Math.round(scale * 100)}%</span>
+                <button 
+                  onClick={() => setScale(prev => Math.min(2, prev + 0.1))}
+                  className="px-2 py-1 text-sm bg-gray-100 rounded"
+                >
+                  +
+                </button>
+              </div>
+              <button
+                onClick={() => setBoxes({})}
+                className="px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded"
+              >
+                Clear Boxes
+              </button>
+              <button
+                onClick={() => {
+                  setShowPdfPreview(false);
+                  setPdfUrl(null);
+                  setBoxes({});
+                }}
+                className="px-3 py-1 text-gray-600 hover:text-gray-800"
+              >
+                ✕
+              </button>
+            </div>
           </div>
-          <div className="flex-1 bg-gray-100 p-6">
+          <div className="flex-1 bg-gray-100 p-6 overflow-auto">
             {isConverting ? (
               <div className="flex items-center justify-center h-full">
                 <div className="bg-white rounded-lg shadow-lg p-8 text-center">
@@ -340,11 +506,23 @@ function DocumentViewer({ documentContent, onDocumentUpload }) {
                 </div>
               </div>
             ) : pdfUrl ? (
-              <iframe
-                src={pdfUrl}
-                className="w-full h-full rounded-lg shadow-lg bg-white"
-                title="PDF Preview"
-              />
+              <Document
+                file={pdfUrl}
+                onLoadSuccess={onDocumentLoadSuccess}
+                onLoadError={(error) => console.error('Error loading PDF:', error)}
+                loading={
+                  <div className="flex items-center justify-center p-4">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  </div>
+                }
+                className="flex flex-col items-center gap-4"
+              >
+                {Array.from(new Array(numPages), (_, index) => (
+                  <div key={`page_${index + 1}`} className="cursor-crosshair">
+                    {renderPage({ pageNumber: index + 1 })}
+                  </div>
+                ))}
+              </Document>
             ) : (
               <div className="flex items-center justify-center h-full">
                 <div className="bg-white rounded-lg shadow-lg p-8 text-center">

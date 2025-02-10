@@ -10,7 +10,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-server/.venv
 # environment variables
 .env
 .env.production
@@ -21,6 +20,9 @@ server/.venv
 # jetbrains setting folder
 .idea/
 
+.venv
+
 sandbox/
 
-*_outout.docx
+*_output.docx
+*__pycache__/

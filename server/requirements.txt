@@ -1,1 +1,6 @@
 fuzzywuzzy==0.18.0
+python-docx
+fasptapi
+uvicorn==0.34.0
+PyPDF2
+trycourier

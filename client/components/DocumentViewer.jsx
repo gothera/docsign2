@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { Document, Page, pdfjs } from 'react-pdf';
 
 if (typeof window !== 'undefined') {
-  pdfjs.GlobalWorkerOptions.workerSrc = '/Users/cosmincojocaru/docsign2/public/pdfjs/pdf.worker.min.js';
+  pdfjs.GlobalWorkerOptions.workerSrc = '/Users/cosmincojocaru/docsign-fastify/openai-realtime-console/client/public/pdfjs/pdf.worker.min.js';
 }
 
 
@@ -46,7 +46,7 @@ function DocumentViewer({ documentContent, onDocumentUpload }) {
         .set(opt)
         .from(documentRef.current)
         .outputPdf('blob');
-        
+      console.log(pdf, "DaD")
       const url = URL.createObjectURL(pdf);
       setPdfUrl(url);
       setShowPdfPreview(true);

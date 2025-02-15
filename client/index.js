@@ -1,8 +1,5 @@
-import routes from "/:routes.js";
-import create from "/:create.jsx";
+import App from "../components/App";
 
-export default {
-  context: import("/:context.js"),
-  routes,
-  create,
-};
+export default function Index() {
+  return <App />;
+}

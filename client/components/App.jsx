@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { Outlet, Link } from 'react-router-dom';
 import logo from "/assets/openai-logomark.svg";
 import EventLog from "./EventLog";
 import SessionControls from "./SessionControls";
 import ToolPanel from "./ToolPanel";
 import DocumentViewer from "./DocumentViewer";
+import PDFSigner from "./PDFSigner";
 
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -102,12 +104,16 @@ export default function App() {
 
   return (
     <>
-      <nav className="absolute top-0 left-0 right-0 h-16 flex items-center">
+      {/* <nav className="absolute top-0 left-0 right-0 h-16 flex items-center">
         <div className="flex items-center gap-4 w-full m-4 pb-2 border-0 border-b border-solid border-gray-200">
           <img style={{ width: "24px" }} src={logo} />
           <h1>Document Editor Console</h1>
+          <div className="ml-auto flex gap-4">
+            <Link to="/" className="text-blue-600 hover:text-blue-800">Home</Link>
+            <Link to="/sign" className="text-blue-600 hover:text-blue-800">Sign</Link>
+          </div>
         </div>
-      </nav>
+      </nav> */}
       <main className="absolute top-16 left-0 right-0 bottom-0">
         <section className="absolute top-0 left-0 right-[100px] bottom-0 flex">
           <section className="absolute top-0 left-0 right-0 bottom-32 px-4 overflow-y-auto">

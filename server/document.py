@@ -64,17 +64,12 @@ class InternalDocument:
     def getIdFromPath(path: str) -> str:
         if path.endswith('.docx') or path.endswith('.json'):
             path = path[:-5]
-        print(path)
-        path = os.path.join(os.getcwd(), path)
         return base64.b64encode(path.encode('utf-8')).decode('utf-8')
     
     @classmethod
     def initFromPath(cls, path: str) -> 'InternalDocument':
         if path.endswith('.docx') or path.endswith('.json'):
             path = path[:-5]
-        print(path)
-        path = os.path.join(os.getcwd(), path)
-        print(path)
         document = cls(id=cls.getIdFromPath(path), path=path, formFields=[], metadata=None)
 
         try:

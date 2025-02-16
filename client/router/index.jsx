@@ -6,8 +6,7 @@ export default function Router () {
     return (
         <Routes>
             <Route index path="/" element={<App />}/>
-            <Route path="/sign" element={<PDFSigner />}/>
-            <Route path="/about" element={<PDFSigner />}/>
+            <Route path="/sign/:documentID" element={<PDFSigner />}/>
         </Routes>
     )
 }

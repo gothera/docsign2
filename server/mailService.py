@@ -3,7 +3,7 @@ import courier
 from courier.client import AsyncCourier
 import os
 
-apiKey = os.getenv('COURIER_API_KEY')
+apiKey = "pk_prod_R7WHY1E3E8M6EZKEV3CN8WC7XM1Z"
 notificationID = 'F7V6PWKB64452RPE0NCG6GED858T'
 client = AsyncCourier(authorization_token=apiKey)
 

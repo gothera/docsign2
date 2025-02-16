@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from document import FormField, DocumentMetadata, DocumentStatus, InternalDocument
 from documentEditor import DocEditor
-from fastapi import FastAPI, HTTPException, Body, Query
+from fastapi import FastAPI, HTTPException, Body, Query, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import base64
@@ -11,7 +11,7 @@ from typing import List, Optional
 import mailService
 import pdfSigner
 from database import DBMock
-
+import json
 
 openai_api_key = os.getenv('OPENAI_API_KEY')
 
@@ -91,26 +91,28 @@ async def callFunction(
 
 @app.post('/request-signature')
 async def requestSignature(
-    path: str = Body(..., alias='document_id', description='Document Path for now'),
-    signerEmail: str = Body(..., alias='signer_email', description='email of the signer for now'),
-    signerName: Optional[str] = Body(None, alias='signer_name', description='name of the signer'),
-    senderEmail: Optional[str] = Body(None, alias='sender_email', description='email of the sender for now'),
-    senderName: Optional[str] = Body(None, alias='sender_name', description='name of the sender'),
-    documentName: Optional[str] = Body(None, alias='document_name', description='the name of the document, if not provided will be infered fromthe path'),
-    formFields: List = Body(..., alias='form_field'),
-    pdf: Optional[str] = Body('')
+    path: str = Form(..., alias='document_id', description='Document Path for now'),
+    signerEmail: str = Form(..., alias='signer_email', description='email of the signer for now'),
+    signerName: Optional[str] = Form(None, alias='signer_name', description='name of the signer'),
+    senderEmail: Optional[str] = Form(None, alias='sender_email', description='email of the sender for now'),
+    senderName: Optional[str] = Form(None, alias='sender_name', description='name of the sender'),
+    documentName: Optional[str] = Form(None, alias='document_name', description='the name of the document, if not provided will be infered fromthe path'),
+    formFields: str = Form(..., alias='form_field'),
+    pdf: UploadFile = File(..., alias='file')
 ):
     if not formFields:
         raise HTTPException(status_code=400, detail='Form fields required')
     if pdf:
         try:
-            documentBytes = base64.b64decode(pdf)
+            documentBytes = await pdf.read()  # This gives you the bytes
         except base64.binascii.Error as e:
             raise ValueError(f"Invalid base64 encoding in the document: {e}")
     
+    print("Dada", len(documentBytes), formFields)
     # try:
     document = InternalDocument.initFromPath(path=path)
-    document.formFields = formFields
+    document.formFields = json.loads(formFields)
+
     document.metadata = DocumentMetadata(
         id=InternalDocument.getIdFromPath(path),
         name=documentName if documentName else document.path.rsplit('/')[0],
@@ -128,7 +130,7 @@ async def requestSignature(
     userDocumetsMap.add(document.id, senderEmail)
     userDocumetsMap.add(document.id, signerEmail)
 
-    url = f'http://localhost:3000/sign?id={document.id}'
+    url = f'http://localhost:3000/sign/{document.id}'
     print(url)
 
     await mailService.sendMail(document.metadata.signerEmail, url, document.metadata.signerName)
@@ -145,31 +147,29 @@ async def getDocument(
 ):
     # try:
     document = InternalDocument.initFromId(id)
-    if not os.path.exists(document.docxPath):
-        raise ValueError(f'Document with id {id} decoded {document.docxPath}, was not found')
+    if not os.path.exists(document.pdfPath):
+        raise ValueError(f'Document with id {id} decoded {document.pdfPath}, was not found')
     if not os.path.exists(document.formFieldsPath):
         raise ValueError(f'Document with id {id} decoded {document.formFieldsPath} was not found')
     
-    with open(document.docxPath, 'rb') as file:
-        docxBytes = file.read()
-        docxBase64Encoded = base64.b64encode(docxBytes).decode('utf-8')
+    # with open(document.docxPath, 'rb') as file:
+    #     docxBytes = file.read()
+    #     docxBase64Encoded = base64.b64encode(docxBytes).decode('utf-8')
     
     pdfBase64Encoded, signedPdfBase64Encoded = '', ''
     try:
         with open(document.pdfPath, 'rb') as file:
             pdfbytes = file.read()
             pdfBase64Encoded = base64.b64encode(pdfbytes).decode('utf-8')
-        with open(document.signPdfPath, 'rb') as file:
-            signedPdfBytes = file.read()
-            signedPdfBase64Encoded = base64.b64encode(signedPdfBytes).decode('utf-8')
+        # with open(document.signPdfPath, 'rb') as file:
+        #     signedPdfBytes = file.read()
+        #     signedPdfBase64Encoded = base64.b64encode(signedPdfBytes).decode('utf-8')
     except:
         pass
         
     content = {
         'id': document.id, 
-        'docx': docxBase64Encoded, 
         'pdf': pdfBase64Encoded, 
-        'signed_pdf': signedPdfBase64Encoded, 
         'form_fields': document.formFields,
     }
     return JSONResponse(content, status_code=200)

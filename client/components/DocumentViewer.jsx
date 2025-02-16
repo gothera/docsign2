@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { Document, Page, pdfjs } from 'react-pdf';
 
 if (typeof window !== 'undefined') {
-  pdfjs.GlobalWorkerOptions.workerSrc = '/Users/cosmincojocaru/docsign-fastify/openai-realtime-console/client/public/pdfjs/pdf.worker.min.js';
+  pdfjs.GlobalWorkerOptions.workerSrc = '/Users/cosmincojocaru/docsign2/public/pdfjs/pdf.worker.min.js';
 }
 
 
@@ -13,18 +13,21 @@ function DocumentViewer({ documentContent, onDocumentUpload }) {
   const canvasRef = useRef();
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfUrl, setPdfUrl] = useState(null);
+  const [filename, setFilename] = useState(null)
   const [isConverting, setIsConverting] = useState(false);
   const documentRef = useRef(null);
 
-    // PDF specific states
-    const [numPages, setNumPages] = useState(null);
-    const [pageNumber, setPageNumber] = useState(1);
-    const [scale, setScale] = useState(1.0);
-    const [boxes, setBoxes] = useState({});  // Boxes stored by page number
-    const [isDrawing, setIsDrawing] = useState(false);
-    const [startPoint, setStartPoint] = useState(null);
-    const [currentBox, setCurrentBox] = useState(null);
-    const pageRefs = useRef({});
+  // PDF specific states
+  const [numPages, setNumPages] = useState(null);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [scale, setScale] = useState(1.0);
+  const [boxes, setBoxes] = useState({});  // Boxes stored by page number
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [startPoint, setStartPoint] = useState(null);
+  const [currentBox, setCurrentBox] = useState(null);
+  const [activeDropdown, setActiveDropdown] = useState(null); // Track which box's dropdown is active
+  const pageRefs = useRef({});
+
   
   const convertToPdf = async () => {
     if (!documentContent || !documentRef.current) return;
@@ -46,7 +49,6 @@ function DocumentViewer({ documentContent, onDocumentUpload }) {
         .set(opt)
         .from(documentRef.current)
         .outputPdf('blob');
-      console.log(pdf, "DaD")
       const url = URL.createObjectURL(pdf);
       setPdfUrl(url);
       setShowPdfPreview(true);
@@ -55,6 +57,26 @@ function DocumentViewer({ documentContent, onDocumentUpload }) {
     } finally {
       setIsConverting(false);
     }
+  };
+
+  const requestSignature = async () => {
+
+    // Fetch the PDF content from the Object URL
+    const response = await fetch(pdfUrl);
+    const pdfBlob = await response.blob();
+
+    // Create FormData and append both the file and additional fields
+    const formData = new FormData();
+    formData.append('file', pdfBlob, 'document.pdf');
+    formData.append('document_id', filename);
+    formData.append('signer_email', "cosminn01rm@gmail.com");
+    formData.append('form_field', JSON.stringify(Object.values(boxes).flat()));
+    const resp = await fetch('http://localhost:8000/request-signature', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await resp.json();
+    console.log("Req sign", data)
   };
 
   const onDocumentLoadSuccess = ({ numPages }) => {
@@ -73,7 +95,11 @@ function DocumentViewer({ documentContent, onDocumentUpload }) {
     // You might want to show an error message to the user here
   };
 
+  const BOX_TYPES = ['Text', 'Name', 'Email', 'Address', 'Signature'];
+
   const startDrawing = (e, pageNumber) => {
+    if (activeDropdown) return; // Prevent drawing while selecting type
+    
     const pageDiv = pageRefs.current[pageNumber];
     if (!pageDiv) return;
 
@@ -100,7 +126,8 @@ function DocumentViewer({ documentContent, onDocumentUpload }) {
       y: Math.min(currentY, startPoint.y),
       width: Math.abs(currentX - startPoint.x),
       height: Math.abs(currentY - startPoint.y),
-      pageNumber
+      pageNumber,
+      id: Date.now() // Add unique identifier for each box
     };
 
     setCurrentBox(newBox);
@@ -111,19 +138,9 @@ function DocumentViewer({ documentContent, onDocumentUpload }) {
       const pageBoxes = boxes[currentBox.pageNumber] || [];
       setBoxes({
         ...boxes,
-        [currentBox.pageNumber]: [...pageBoxes, currentBox]
+        [currentBox.pageNumber]: [...pageBoxes, { ...currentBox, type: null }]
       });
-      
-      // Log the box coordinates with page number
-      console.log('Box added:', {
-        page: currentBox.pageNumber,
-        coordinates: {
-          x: currentBox.x,
-          y: currentBox.y,
-          width: currentBox.width,
-          height: currentBox.height
-        }
-      });
+      setActiveDropdown(currentBox.id); // Show dropdown for the new box
     }
     
     setIsDrawing(false);
@@ -131,6 +148,44 @@ function DocumentViewer({ documentContent, onDocumentUpload }) {
     setStartPoint(null);
   };
 
+  const handleTypeSelection = (boxId, pageNumber, selectedType) => {
+    const pageBoxes = boxes[pageNumber] || [];
+    const updatedBoxes = pageBoxes.map(box => {
+      if (box.id === boxId) {
+        // Create the complete box object with all necessary fields
+        return {
+          id: box.id,
+          pageNumber: box.pageNumber,
+          x: box.x,
+          y: box.y,
+          width: box.width,
+          height: box.height,
+          type: selectedType,
+        };
+      }
+      return box;
+    });
+
+    setBoxes({
+      ...boxes,
+      [pageNumber]: updatedBoxes
+    });
+
+    setActiveDropdown(null); // Hide dropdown after selection
+    
+    // Log the box coordinates with page number and type
+    const updatedBox = updatedBoxes.find(box => box.id === boxId);
+    console.log('Box updated:', {
+      page: pageNumber,
+      type: selectedType,
+      coordinates: {
+        x: updatedBox.x,
+        y: updatedBox.y,
+        width: updatedBox.width,
+        height: updatedBox.height
+      }
+    });
+  };
 
     // Custom page renderer with annotation overlay
     const renderPage = ({ pageNumber }) => {
@@ -151,34 +206,69 @@ function DocumentViewer({ documentContent, onDocumentUpload }) {
             scale={scale}
             className="shadow-lg"
           />
-          <div className="absolute inset-0 pointer-events-none">
-            {/* Render existing boxes */}
-            {pageBoxes.map((box, index) => (
-              <div
-                key={index}
-                className="absolute border-2 border-blue-500 bg-blue-100 bg-opacity-20"
-                style={{
-                  left: box.x * scale,
-                  top: box.y * scale,
-                  width: box.width * scale,
-                  height: box.height * scale
-                }}
-              />
-            ))}
-            {/* Render current box being drawn */}
-            {isDrawingOnThisPage && currentBox && (
-              <div
-                className="absolute border-2 border-blue-500 bg-blue-100 bg-opacity-20"
-                style={{
-                  left: currentBox.x * scale,
-                  top: currentBox.y * scale,
-                  width: currentBox.width * scale,
-                  height: currentBox.height * scale
-                }}
-              />
-            )}
-          </div>
+            <div className="absolute inset-0">
+              {/* Render existing boxes */}
+              {pageBoxes.map((box) => (
+                <div key={box.id} className="relative">
+                  <div
+                    className="absolute border-2 border-blue-500 bg-blue-100 bg-opacity-20"
+                    style={{
+                      left: box.x * scale,
+                      top: box.y * scale,
+                      width: box.width * scale,
+                      height: box.height * scale
+                    }}
+                  />
+                  {/* Type label if selected */}
+                  {box.type && (
+                    <div
+                      className="absolute bg-blue-500 text-white text-xs px-1 rounded"
+                      style={{
+                        left: box.x * scale,
+                        top: (box.y * scale) - 20
+                      }}
+                    >
+                      {box.type}
+                    </div>
+                  )}
+                  {/* Dropdown for type selection */}
+                  {activeDropdown === box.id && (
+                    <div
+                      className="absolute z-10 bg-white border border-gray-200 rounded shadow-lg"
+                      style={{
+                        left: (box.x * scale) + (box.width * scale),
+                        top: box.y * scale
+                      }}
+                    >
+                      <select
+                        className="w-full p-2 focus:outline-none"
+                        onChange={(e) => handleTypeSelection(box.id, pageNumber, e.target.value)}
+                        value={box.type || ''}
+                        autoFocus
+                      >
+                        <option value="">Select type...</option>
+                        {BOX_TYPES.map(type => (
+                          <option key={type} value={type}>{type}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {/* Render current box being drawn */}
+              {isDrawingOnThisPage && currentBox && (
+                <div
+                  className="absolute border-2 border-blue-500 bg-blue-100 bg-opacity-20"
+                  style={{
+                    left: currentBox.x * scale,
+                    top: currentBox.y * scale,
+                    width: currentBox.width * scale,
+                    height: currentBox.height * scale
+                  }}
+                />
+              )}
         </div>
+      </div>
       );
     };
 
@@ -221,6 +311,8 @@ function DocumentViewer({ documentContent, onDocumentUpload }) {
         onDocumentUpload(documentData);
       } else if (file.name.endsWith('.docx')) {
         // Dynamically import mammoth
+        setFilename(file.name)
+        console.log("Filename is", file)
         const mammoth = await import('mammoth');
         const options = {
           styleMap: [
@@ -463,6 +555,10 @@ function DocumentViewer({ documentContent, onDocumentUpload }) {
         <div className="w-1/2 flex flex-col transition-all duration-300">
           <div className="flex items-center justify-between p-4 border-b border-gray-200">
             <h2 className="text-lg font-semibold">PDF Preview</h2>
+            <button onClick={requestSignature} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              <FileText size={16} />
+              SEND
+            </button>
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <button 

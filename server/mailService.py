@@ -1,21 +1,29 @@
+import asyncio
 import courier
 from courier.client import AsyncCourier
 import os
-import asyncio
 
 apiKey = os.getenv('COURIER_API_KEY')
-apiKey = 'pk_prod_R7WHY1E3E8M6EZKEV3CN8WC7XM1Z'
+notificationID = 'F7V6PWKB64452RPE0NCG6GED858T'
 client = AsyncCourier(authorization_token=apiKey)
 
-async def sendMail(mailAddress: str, documentID: str):
-    response = await client.send(
-        message=courier.TemplateMessage(
-        template='SignratureRequest',
-        to=courier.UserRecipient(sendMail=mailAddress),
-        data={'name': 'Cosmin', 'id':documentID, 'here': 'notHere'},
+async def sendMail(mailAddress: str, url: str, name: str):
+    messageTemplate = courier.TemplateMessage(
+            template=notificationID,
+            to=courier.UserRecipient(
+                email=mailAddress,
+                data={'name': name, 'url': url},
+            ),
+            routing=courier.Routing(method='single', channels=['email']),
         )
-    )
-    return response
+    
+    await client.send(message=messageTemplate)
+
+
+def test():
+    testmail = 'alertsysterm@gmail.com'
+    print(asyncio.run(sendMail(testmail, '123')))
+
 
 if __name__ == '__main__':
-    print(asyncio.run(sendMail('alertsysterm@gmail.com', '123')))
+    test()

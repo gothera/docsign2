@@ -24,5 +24,8 @@ pnpm-debug.log*
 
 sandbox/
 
-*_output.docx
+data/*.json
+data/*.signed.pdf
+_output.docx
+userDocumentTable.json
 *__pycache__/

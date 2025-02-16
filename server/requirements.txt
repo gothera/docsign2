@@ -3,4 +3,5 @@ python-docx
 fasptapi
 uvicorn==0.34.0
 PyPDF2
+reportlab
 trycourier

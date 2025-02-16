@@ -1,8 +1,8 @@
 import base64
 from dataclasses import dataclass, asdict
-from docx import Document
 from enum import Enum
 import json
+import os
 from typing import List
 
 
@@ -15,12 +15,13 @@ class FieldType(Enum):
 
 @dataclass
 class FormField:
-    type: FieldType
-    page: int
+    id: str
+    pageNumber: int
     x: float
     y: float
     height: float
     width: float
+    type: FieldType
 
 class DocumentStatus(Enum):
     CREATED = 'created'
@@ -51,7 +52,8 @@ class DocumentMetadata:
 class InternalDocument:
     id: str
     path: str
-    formFields: List[FormField]
+    # formFields: List[FormField]
+    formFields: List
     metadata: DocumentMetadata
 
     @staticmethod
@@ -60,11 +62,19 @@ class InternalDocument:
     
     @staticmethod
     def getIdFromPath(path: str) -> str:
-        path = path.rsplit('.', 1)[0]
+        if path.endswith('.docx') or path.endswith('.json'):
+            path = path[:-5]
+        print(path)
+        path = os.path.join(os.getcwd(), path)
         return base64.b64encode(path.encode('utf-8')).decode('utf-8')
     
     @classmethod
     def initFromPath(cls, path: str) -> 'InternalDocument':
+        if path.endswith('.docx') or path.endswith('.json'):
+            path = path[:-5]
+        print(path)
+        path = os.path.join(os.getcwd(), path)
+        print(path)
         document = cls(id=cls.getIdFromPath(path), path=path, formFields=[], metadata=None)
 
         try:
@@ -75,7 +85,8 @@ class InternalDocument:
         
         try:
             with open(document.formFieldsPath, 'r') as f:
-                document.formFields = [FormField(**formDict) for formDict in json.load(f)]
+                # document.formFields = [FormField(**formDict) for formDict in json.load(f)]
+                document.formFields = json.load(f)
         except:
             pass
         
@@ -86,10 +97,11 @@ class InternalDocument:
         return cls.initFromPath(cls.getPathFromId(id))
     
     def save(self):
-        with open(document.metadataPath, 'w') as f:
+        with open(self.metadataPath, 'w') as f:
             f.write(self.metadata.toJSON())
-        with open(document.formFieldsPath, 'w') as f:
-            json.dump([asdict(formField) for formField in self.formFields], f, cls=EnumEncoder)
+        with open(self.formFieldsPath, 'w') as f:
+            # json.dump([asdict(formField) for formField in self.formFields], f, cls=EnumEncoder)
+            json.dump(self.formFields, f, cls=EnumEncoder)
 
     @property
     def docxPath(self):
@@ -132,7 +144,7 @@ if __name__ == '__main__':
     document = document.initFromPath(path)
     print(document.metadata)
     
-    document.formFields = [FormField(FieldType.SIGNATURE, i + 1, i, i + 1, i + 2, i + 3) for i in range(3)]
+    document.formFields = [asdict(FormField('id', FieldType.SIGNATURE, i + 1, i, i + 1, i + 2, i + 3)) for i in range(3)]
     document.save()
     
     document = document.initFromPath(path)

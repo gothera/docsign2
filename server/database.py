@@ -12,7 +12,7 @@ class DBMock:
             self.documetsMap = {}
     
     def add(self, documentID: str, userEmail: str):
-        if userEmail not in self.documentMap:
+        if userEmail not in self.documetsMap:
             self.documetsMap[userEmail] = []
         
         self.documetsMap[userEmail].append(documentID)

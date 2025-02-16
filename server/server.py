@@ -94,39 +94,39 @@ async def callFunction(
 async def requestSignature(
     path: str = Body(..., alias='document_id', description='Document Path for now'),
     signerEmail: str = Body(..., alias='signer_email', description='email of the signer for now'),
-    signerName: Optional[str] = Body(..., alias='signer_name', description='name of the signer'),
-    senderEmail: Optional[str] = Body(..., alias='sender_email', description='email of the sender for now'),
-    senderName: Optional[str] = Body(..., alias='sender_name', description='name of the sender'),
-    documentName: Optional[str] = Body(..., alias='document_name', description='the name of the document, if not provided will be infered fromthe path'),
+    signerName: Optional[str] = Body(None, alias='signer_name', description='name of the signer'),
+    senderEmail: Optional[str] = Body(None, alias='sender_email', description='email of the sender for now'),
+    senderName: Optional[str] = Body(None, alias='sender_name', description='name of the sender'),
+    documentName: Optional[str] = Body(None, alias='document_name', description='the name of the document, if not provided will be infered fromthe path'),
     formFields: List = Body(..., alias='form_field')
 ):
     if not formFields:
         raise HTTPException(status_code=400, detail='Form fields required')
-    try:
-        document = InternalDocument.initFromPath(path)
-        document.formFields = formFields
-        document.metadata = DocumentMetadata(
-            path=path,
-            name=documentName if documentName else document.path.rsplit('/')[0],
-            senderEmail=senderEmail if senderName else defaultEmail,
-            senderName=senderName if signerName else defaultName,
-            signerEmail=signerEmail,
-            signerName=signerName if signerName else defaultName,
-            status=DocumentStatus.WAITING
-        )
-        document.save()
-        userDocumetsMap.add(document.id, senderEmail)
-        userDocumetsMap.add(document.id, signerEmail)
+    # try:
+    document = InternalDocument.initFromPath(path=path)
+    document.formFields = formFields
+    document.metadata = DocumentMetadata(
+        id=InternalDocument.getIdFromPath(path),
+        name=documentName if documentName else document.path.rsplit('/')[0],
+        senderEmail=senderEmail if senderName else defaultEmail,
+        senderName=senderName if signerName else defaultName,
+        signerEmail=signerEmail,
+        signerName=signerName if signerName else defaultName,
+        status=DocumentStatus.WAITING
+    )
+    document.save()
+    userDocumetsMap.add(document.id, senderEmail)
+    userDocumetsMap.add(document.id, signerEmail)
 
-        url = f'http://localhost:3000/sign?id={document.id}'
-        print(url)
+    url = f'http://localhost:3000/sign?id={document.id}'
+    print(url)
 
-        await mailService.sendMail(document.metadata.signerEmail, url, document.metadata.signerName)
+    await mailService.sendMail(document.metadata.signerEmail, url, document.metadata.signerName)
 
-        return JSONResponse(content={'id': document.id}, status_code=200)
+    return JSONResponse(content={'id': document.id}, status_code=200)
     
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Error: {str(e)}')
+    # except Exception as e:
+    #     raise HTTPException(status_code=500, detail=f'Error: {str(e)}')
 
 
 @app.get('/document')
@@ -135,8 +135,10 @@ async def getDocument(
 ):
     try:
         document = InternalDocument.initFromId(id)
-        if not os.path.exists(document.formFieldsPath) or not os.path.exists(document.docxPath):
-            raise ValueError(f'Document with id {id} decoded {document.docxPath}, {document.formFieldsPath} was not found')
+        if not os.path.exists(document.docxPath):
+            raise ValueError(f'Document with id {id} decoded {document.docxPath}, was not found')
+        if not os.path.exists(document.formFieldsPath):
+            raise ValueError(f'Document with id {id} decoded {document.formFieldsPath} was not found')
         
         with open(document.docxPath, 'rb') as file:
             docxBytes = file.read()
@@ -208,8 +210,8 @@ async def getDocumentsList(userEmail: str = Body(..., alias='user_name')):
             sent.append(document.metadata)
     
     content = {
-        'sent': f'[{','.join([d.toJSON() for d in sent])}]',
-        'received': f'[{','.join([d.toJSON() for d in received])}]',
+        # 'sent': f'[{','.join([d.toJSON() for d in sent])}]',
+        # 'received': f'[{','.join([d.toJSON() for d in received])}]',
     }
     return JSONResponse(content, status_code=200)
 

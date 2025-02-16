@@ -21,4 +21,6 @@ class DBMock:
             json.dump(self.documetsMap, f)
     
     def getDocuments(self, userEmail: str) -> List[str]:
+        if userEmail not in self.documetsMap:
+            return []
         return self.documetsMap[userEmail]

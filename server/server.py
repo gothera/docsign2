@@ -6,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import base64
 import httpx
-import json
 import os
 from typing import List, Optional
 import mailService
@@ -98,10 +97,17 @@ async def requestSignature(
     senderEmail: Optional[str] = Body(None, alias='sender_email', description='email of the sender for now'),
     senderName: Optional[str] = Body(None, alias='sender_name', description='name of the sender'),
     documentName: Optional[str] = Body(None, alias='document_name', description='the name of the document, if not provided will be infered fromthe path'),
-    formFields: List = Body(..., alias='form_field')
+    formFields: List = Body(..., alias='form_field'),
+    pdf: Optional[str] = Body('')
 ):
     if not formFields:
         raise HTTPException(status_code=400, detail='Form fields required')
+    if pdf:
+        try:
+            documentBytes = base64.b64decode(pdf)
+        except base64.binascii.Error as e:
+            raise ValueError(f"Invalid base64 encoding in the document: {e}")
+    
     # try:
     document = InternalDocument.initFromPath(path=path)
     document.formFields = formFields
@@ -115,6 +121,10 @@ async def requestSignature(
         status=DocumentStatus.WAITING
     )
     document.save()
+    if pdf:
+        with open(document.pdfPath, 'wb') as file:
+            file.write(documentBytes)
+    
     userDocumetsMap.add(document.id, senderEmail)
     userDocumetsMap.add(document.id, signerEmail)
 
@@ -133,38 +143,38 @@ async def requestSignature(
 async def getDocument(
     id: str = Query(..., alias='id', description='The ID of the document')
 ):
+    # try:
+    document = InternalDocument.initFromId(id)
+    if not os.path.exists(document.docxPath):
+        raise ValueError(f'Document with id {id} decoded {document.docxPath}, was not found')
+    if not os.path.exists(document.formFieldsPath):
+        raise ValueError(f'Document with id {id} decoded {document.formFieldsPath} was not found')
+    
+    with open(document.docxPath, 'rb') as file:
+        docxBytes = file.read()
+        docxBase64Encoded = base64.b64encode(docxBytes).decode('utf-8')
+    
+    pdfBase64Encoded, signedPdfBase64Encoded = '', ''
     try:
-        document = InternalDocument.initFromId(id)
-        if not os.path.exists(document.docxPath):
-            raise ValueError(f'Document with id {id} decoded {document.docxPath}, was not found')
-        if not os.path.exists(document.formFieldsPath):
-            raise ValueError(f'Document with id {id} decoded {document.formFieldsPath} was not found')
+        with open(document.pdfPath, 'rb') as file:
+            pdfbytes = file.read()
+            pdfBase64Encoded = base64.b64encode(pdfbytes).decode('utf-8')
+        with open(document.signPdfPath, 'rb') as file:
+            signedPdfBytes = file.read()
+            signedPdfBase64Encoded = base64.b64encode(signedPdfBytes).decode('utf-8')
+    except:
+        pass
         
-        with open(document.docxPath, 'rb') as file:
-            docxBytes = file.read()
-            docxBase64Encoded = base64.b64encode(docxBytes).decode('utf-8')
-        
-        pdfBase64Encoded, signedPdfBase64Encoded = '', ''
-        try:
-            with open(document.pdfPath, 'rb') as file:
-                pdfbytes = file.read()
-                pdfBase64Encoded = base64.b64encode(pdfbytes).decode('utf-8')
-            with open(document.signPdfPath, 'rb') as file:
-                signedPdfBytes = file.read()
-                signedPdfBase64Encoded = base64.b64encode(signedPdfBytes).decode('utf-8')
-        except:
-            pass
-            
-        content = {
-            'id': document.id, 
-            'docx': docxBase64Encoded, 
-            'pdf': pdfBase64Encoded, 
-            'signed_pdf': signedPdfBase64Encoded, 
-            'form_fields': document.formFields,
-        }
-        return JSONResponse(content, status_code=200)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Error retrieving document: {str(e)}')
+    content = {
+        'id': document.id, 
+        'docx': docxBase64Encoded, 
+        'pdf': pdfBase64Encoded, 
+        'signed_pdf': signedPdfBase64Encoded, 
+        'form_fields': document.formFields,
+    }
+    return JSONResponse(content, status_code=200)
+    # except Exception as e:
+    #     raise HTTPException(status_code=500, detail=f'Error retrieving document: {str(e)}')
 
 
 @app.post("/sign")
@@ -173,21 +183,24 @@ async def sign(
     documentId: Optional[str] = Body(..., alias='document_id')
 ):
     print("Sign endpoint: args: ", documentId)
-    if not pdf:
-        raise HTTPException(status_code=400, detail="No content found in the request body.")
     try:
         document = InternalDocument.initFromId(documentId)
     except base64.binascii.Error as e:
         raise HTTPException(status_code=400, detail=f"Invalid base64 encoding in the document: {e}")
     
-    try:
-        documentBytes = base64.b64decode(pdf)
-    except base64.binascii.Error as e:
-        raise ValueError(f"Invalid base64 encoding in the document: {e}")
+    if not pdf or not os.path.exists(document.pdfPath):
+        raise HTTPException(status_code=400, detail="No content found in the request body.")
+    
+    if pdf:
+        try:
+            documentBytes = base64.b64decode(pdf)
+        except base64.binascii.Error as e:
+            raise ValueError(f"Invalid base64 encoding in the document: {e}")
 
     try:
-        with open(document.pdfPath, 'wb') as file:
-            file.write(documentBytes)
+        if pdf:
+            with open(document.pdfPath, 'wb') as file:
+                file.write(documentBytes)
 
         pdfSigner.signPDF(document.pdfPath, document.metadata.signerName, document.metadata.signerEmail, document.signPdfPath)
         
@@ -200,8 +213,9 @@ async def sign(
 
 
 @app.get('/documents')
-async def getDocumentsList(userEmail: str = Body(..., alias='user_name')):
+async def getDocumentsList(userEmail: str = Query(..., alias='user_email')):
     sent, received = [], []
+
     for documentId in userDocumetsMap.getDocuments(userEmail):
         document = InternalDocument.initFromId(documentId)
         if document.metadata.signerEmail == userEmail:
@@ -210,9 +224,10 @@ async def getDocumentsList(userEmail: str = Body(..., alias='user_name')):
             sent.append(document.metadata)
     
     content = {
-        # 'sent': f'[{','.join([d.toJSON() for d in sent])}]',
-        # 'received': f'[{','.join([d.toJSON() for d in received])}]',
+        'sent': [s.toDict() for s in sent],
+        'received': [s.toDict() for s in sent],
     }
+    print(content)
     return JSONResponse(content, status_code=200)
 
 

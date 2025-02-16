@@ -43,9 +43,14 @@ class DocumentMetadata:
     signerEmail: str
     signerName: str
     status: DocumentStatus
-
+    
     def toJSON(self):
         return json.dumps(asdict(self), cls=EnumEncoder)
+
+    def toDict(self):
+        d = asdict(self)
+        d['status'] = self.status.value
+        return d
 
 
 @dataclass

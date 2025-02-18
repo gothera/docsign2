@@ -5,18 +5,32 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
+fontPath = '../data/MonsieurLaDoulaise-Regular.ttf'
 
 def signPDF(pdfPath: str, userName: str, userEmail: str, outputFile: str, 
-            *, pageNum=0, x=400, y=500, height=10, width=10):
+            *, pageNum=0, x=400, y=200, height=50, width=100):
 
     packet = io.BytesIO()
     can = canvas.Canvas(packet, pagesize=letter)
     
-    # Register a custom font if needed for a more signature-like appearance
-    # Here, we're using a built-in font, but you can load a TTF for better customization
-    # pdfmetrics.registerFont(TTFont('SignatureFont', 'path/to/your/font.ttf'))
-    # can.setFont("SignatureFont", 18)  # or use 'Helvetica' for standard font
-    can.setFont("Helvetica", 18)
+    fontName = 'SignatureFont'
+    try:
+        
+        pdfmetrics.registerFont(TTFont(fontName, fontPath))
+        can.setFont(fontName, height)
+    except Exception as e:
+        print(e)
+        fontName = 'Helvetica'
+        can.setFont(fontName, height)
+
+    textWidth = pdfmetrics.stringWidth(userName, fontName, height)
+    
+    fontSize = height
+    if textWidth > width:
+        fontSize = height * (width / textWidth)
+    
+    print(fontSize)
+    can.setFont(fontName, fontSize)
     can.drawString(x ,y, userName)
     can.save()
 
@@ -34,6 +48,6 @@ def signPDF(pdfPath: str, userName: str, userEmail: str, outputFile: str,
 
 if __name__ == '__main__':
     path = '/Users/Adrian/Projects/docsign2/data/Lease-Agreement.pdf'
-    outputFile = path[:-4] + 'Signed.pdf'
+    outputFile = path[:-4] + '.signed.pdf'
 
     signPDF(path, 'Adrian', '', outputFile)

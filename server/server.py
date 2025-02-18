@@ -115,9 +115,9 @@ async def requestSignature(
 
     document.metadata = DocumentMetadata(
         id=InternalDocument.getIdFromPath(path),
-        name=documentName if documentName else document.path.rsplit('/')[0],
+        name=documentName if documentName else document.path.rsplit('/')[-1],
         senderEmail=senderEmail if senderName else defaultEmail,
-        senderName=senderName if signerName else defaultName,
+        senderName=senderName if senderName else defaultName,
         signerEmail=signerEmail,
         signerName=signerName if signerName else defaultName,
         status=DocumentStatus.WAITING
@@ -127,8 +127,8 @@ async def requestSignature(
         with open(document.pdfPath, 'wb') as file:
             file.write(documentBytes)
     
-    userDocumetsMap.add(document.id, senderEmail)
-    userDocumetsMap.add(document.id, signerEmail)
+    userDocumetsMap.add(document.id, document.metadata.senderEmail)
+    userDocumetsMap.add(document.id, document.metadata.signerEmail)
 
     url = f'http://localhost:3000/sign/{document.id}'
     print(url)

@@ -4,6 +4,9 @@ from docx.enum.style import WD_STYLE_TYPE
 from typing import Optional, Union, List, Tuple
 from fuzzywuzzy import fuzz
 import sys
+import os
+
+rootPath = os.getenv('PATH_TO_ROOT')
 
 threshold = 98
 
@@ -186,19 +189,28 @@ class DocEditor:
         if save and not self.outputFileName:
             raise ValueError('The document can not be save if an outputFileName was not provided in the constructor')
 
-        paragraphsIndexes, offset = self.find(text)
+        paragraphsIndexes, offset = [], 0
+        try:
+            paragraphsIndexes, offset = self.find(text)
+        except ValueError:
+            if self.debug:
+                print('Did not find exact match, trying fuzzyFind')
+            paragraphsIndexes = self.findFuzzy(text)
+       
+        if len(paragraphsIndexes) == 0:
+            raise RuntimeError(f'The list of paragraphs contianing the text is empty')
+        
+        if self.debug:
+            print(paragraphsIndexes, len(doc.paragraphs), offset)
+
         doc = self.document
-        # doc = Document()
         index = 0
-        print(paragraphsIndexes, len(doc.paragraphs), offset)
         for i in paragraphsIndexes:
             if i == paragraphsIndexes[0] and offset != 0:
                 doc.paragraphs[i].text = doc.paragraphs[i].text[:offset]
                 continue
             if i == paragraphsIndexes[-1]:
                 if len(text) - index == len(doc.paragraphs[i].text):
-                    # print(text, doc.paragraphs[i].text)
-                    # print(i == paragraphsIndexes[0], doc.paragraphs[4] is doc.paragraphs[4],  id(doc.paragraphs[paragraphsIndexes[0]]), id(doc.paragraphs[i]))
                     # doc.paragraphs.remove(doc.paragraphs[i])
                     # doc.paragraphs.pop(i)
                     doc.paragraphs[i].text = ''
@@ -207,9 +219,6 @@ class DocEditor:
                 print(len(doc.paragraphs))
                 continue
             # doc.paragraphs.remove(doc.paragraphs[i])
-            # doc.paragraphs = doc.paragraphs[:5]
-            # doc.__setattr__('paragraphs'. doc.paragraphs[:5])
-            # print(len(doc.paragraphs))
             doc.paragraphs[i].text = ''
             index += len(doc.paragraphs[i].text)
 
@@ -226,22 +235,52 @@ class DocEditor:
         if save and not self.outputFileName:
             raise ValueError('The document can not be save if an outputFileName was not provided in the constructor')
 
+        paragraphsIndexes = []
+        try:
+            paragraphsIndexes, _ = self.find(textBefore)
+        except ValueError:
+            if self.debug:
+                print('Did not find exact match, trying fuzzyFind')
+            paragraphsIndexes = self.findFuzzy(textBefore)
+       
+        if len(paragraphsIndexes) == 0:
+            raise RuntimeError(f'The list of paragraphs contianing the text is empty')
+        
+        if self.debug:
+            print(paragraphsIndexes, len(doc.paragraphs), offset)
+
         doc = self.document
-        paragraphsIndexes, offset = self.find(textBefore)
+        doc = Document()
         lastParagraph = doc.paragraphs[paragraphsIndexes[-1]]
-        if (len(textBefore) >= len(lastParagraph.text) and lastParagraph.text in textBefore) or \
-            (len(textBefore) < len(lastParagraph.text) and textBefore[::-1] == lastParagraph.text[-len(textBefore):][::-1]):
+        if (len(textBefore) >= len(lastParagraph.text) and fuzz.ratio(lastParagraph.text, textBefore[-len(lastParagraph.text):]) > threshold) or \
+            (len(textBefore) < len(lastParagraph.text) and fuzz.ratio(textBefore, lastParagraph.text[-len(textBefore):]) > threshold):
+            
             # add paragraphs after the last found paragraph
-            pass
+            text, style = paragraphText, doc.styles['Normal']
+            nextText, nextStyle = '', None
+            needsNewParagraph = True
+            for i in range(paragraphsIndexes[-1] + 1, len(doc.paragraphs)):
+                nextText, nextStyle = doc.paragraphs[i].text, doc.paragraphs[i].style
+                doc.paragraphs[i].text, doc.paragraphs[i].style = text, style
+                text, style = nextText, nextStyle
+                if nextText.strip() == '':
+                    # incorporate a new line in the previous paragraph
+                    if '\n' in newText:
+                        doc.paragraphs[i].text += '\n' 
+                    needsNewParagraph = False
+                    break
+            if needsNewParagraph:
+                doc.add_paragraph(text, style)
+
         else:
             # add text in the midle of the last paragraph found
-            pass
+            raise NotImplementedError('add text in the midle of the last paragraph found')
 
 
 class TestDocEditor:
     def __init__(self, debug = False):
-        self.filename = '../data/testLongText.docx'
-        # self.filename = '/Users/Adrian/Projects/docsign2/data/testLongText.docx'
+        self.filename = os.path.join(rootPath, 'data/testLongText.docx')
+        self.filename1 = os.path.join(rootPath, 'data/startup.docx')
         self.document = Document(self.filename)
         self.docEditor = DocEditor(document=self.filename, debug=debug)
     
@@ -264,6 +303,8 @@ class TestDocEditor:
             start, end = i * len(newText) // no, (i + 1) * len(newText) // no
             assert editedDoc.paragraphs[targetIndex].text == newText[start:end], f'Paragraph {targetIndex} from the doc shoud be "{newText[start:end]}" but is "{editedDoc.paragraphs[targetIndex].text}"\n"'
 
+    # test replace with fuzzy
+
     def testFindText(self):
         targetIndexes = [8, 9, 10]
         text = '\n'.join([self.document.paragraphs[i].text for i in targetIndexes])
@@ -284,8 +325,12 @@ class TestDocEditor:
         for i, paragraph in enumerate(doc.paragraphs):
             assert text not in paragraph.text, f'a paragraph with remove text is still presesnt: {i} {paragraph.text}'
 
-        # test deleteing from multimple paragraphs
+    # test deleteing from multimple paragraphs
+    # test delete with fuzzy
 
+    # test add simple find with 1 paragraphs as text before
+    # test add simple find with 2 paragraphs as text before
+    # test add fuzzy find with 2 paragraphs before
 
 
 class printdocs:
@@ -317,47 +362,22 @@ class printdocs:
     @staticmethod            
     def print_header_footer(document):
         for section in document.sections:
-            print(section.header.paragraphs[0].text if section.header.paragraphs else 'No header')  # Assumes there's text in the first paragraph of the header
-            print(section.footer.paragraphs[0].text if section.footer.paragraphs else 'No footer')  # Assumes there's text in the first paragraph of the footer
-
-
-def test():
-    path_root = '../'
-    document = Document(path_root + 'data/testUploadDocument.docx')
-    # print_text(document)
-    printdocs.print_styles(document, WD_STYLE_TYPE.PARAGRAPH)
-    print()
-
-    ltDocument = Document(path_root + 'data/testLongText.docx')
-    printdocs.print_styles(ltDocument, WD_STYLE_TYPE.PARAGRAPH)
-    # print_text(ltDocument)
-    print()
-
-    WpDocument = Document(path_root + 'data/WP3.docx')
-    printdocs.print_styles(WpDocument)
-    # print_text(WpDocument)
-    print()
-
-    WpDocument = Document(path_root + 'data/WP3_older_document_version.docx')
-    printdocs.print_styles(WpDocument)
+            print(section.header.paragraphs[0].text if section.header.paragraphs else 'No header')
+            print(section.footer.paragraphs[0].text if section.footer.paragraphs else 'No footer')
 
 
 if __name__ == '__main__':
-    # ltDocument = Document(path_root + 'data/testLongText.docx')
-    # text = '\n'.join([p.text for p in ltDocument.paragraphs])
-    # print(text)
-    # printdocs.print_text(ltDocument)
     tester = TestDocEditor(debug=True)
     # tester.testFindText()
     # tester.testReplaceTextSigleParagraphs()
     # tester.testReplaceTextMultipleParagraphs()
     # tester.testDelete()
     # tester.testFindFuzzyText()
-    file = '/Users/Adrian/Projects/docsign2/data/startup.docx'
+    
+    file = os.path.join(rootPath, 'data/startup.docx')
     original = "Counter-intuitively, most of the best startup ideas already have competitors, and founders incorrectly shy away from spaces with competitors.  It’s often a bigger reason to worry if you have zero competitors - that may mean that there is no need for this product (a SISP).  If your competitors are new or don’t have much marketshare, you can often just ignore them.\nBut if you are going up against an entrenched competitor (i.e., you want to beat Google at web search), you’re going to need a specific strategy to do that."
-    target = "  lkvbajks;;dbvqe;jdvba;osldjvbnas;oudvbqw;ijvklbnas;jdk;vl/asndbvhia;sjldhvnb ;adshkjlvkba;shkjlvba shkjbdlv"
-
+    newText = "  lkvbajks;;dbvqe;jdvba;osldjvbnas;oudvbqw;ijvklbnas;jdk;vl/asndbvhia;sjldhvnb ;adshkjlvkba;shkjlvba shkjbdlv"
+    
     editor = DocEditor(file, debug=True)
-    editor.replaceText(original, target, save=True)
-    # printdocs.print_text
+    editor.replaceText(original, newText, save=True)
 

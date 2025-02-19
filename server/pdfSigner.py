@@ -40,11 +40,17 @@ def signPDF(pdfPath: str, userName: str, userEmail: str, outputFile: str,
 
     reader, writer = PdfReader(pdfPath), PdfWriter()
     
+    for i in range(0, pageNum):
+        writer.add_page(reader.pages[i])
+
     packet.seek(0)
     tmpPage = PdfReader(packet).pages[0]
     page = reader.pages[pageNum]
     page.merge_page(tmpPage)
     writer.add_page(page)
+
+    for i in range(pageNum + 1, len(reader.pages)):
+        writer.add_page(reader.pages[i])
 
     with open(outputFile, "wb") as outputFile:
         writer.write(outputFile)

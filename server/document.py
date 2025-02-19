@@ -121,7 +121,7 @@ class InternalDocument:
     
     @property
     def signPdfPath(self):
-        return self.path + 'signed.pdf'
+        return self.path + '.signed.pdf'
 
 
 if __name__ == '__main__':

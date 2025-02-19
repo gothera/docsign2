@@ -24,8 +24,17 @@ pnpm-debug.log*
 
 sandbox/
 
-data/*.json
-data/*.signed.pdf
 _output.docx
 userDocumentTable.json
 *__pycache__/
+
+
+# Ignore all documents files that are not in data
+*.pdf
+*.docx
+*.formFields.json
+*.metadata.json
+
+# But do not ignore PDFs in the data directory
+!data/*.pdf
+!data/*.docx

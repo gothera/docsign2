@@ -1,11 +1,15 @@
 import io
+import os
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+ 
 
-fontPath = '../data/MonsieurLaDoulaise-Regular.ttf'
+rootPath = os.getenv('PATH_TO_ROOT')
+fontPath = os.path.join(rootPath, 'data/MonsieurLaDoulaise-Regular.ttf')
+
 
 def signPDF(pdfPath: str, userName: str, userEmail: str, outputFile: str, 
             *, pageNum=0, x=400, y=200, height=50, width=100):
@@ -47,7 +51,7 @@ def signPDF(pdfPath: str, userName: str, userEmail: str, outputFile: str,
 
 
 if __name__ == '__main__':
-    path = '/Users/Adrian/Projects/docsign2/data/Lease-Agreement.pdf'
+    path = os.path.join(rootPath, 'data/Lease-Agreement.pdf')
     outputFile = path[:-4] + '.signed.pdf'
 
     signPDF(path, 'Adrian', '', outputFile)

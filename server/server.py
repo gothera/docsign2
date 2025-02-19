@@ -1,19 +1,25 @@
 from contextlib import asynccontextmanager
+from database import DBMock
 from document import FormField, DocumentMetadata, DocumentStatus, InternalDocument
 from documentEditor import DocEditor
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Body, Query, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from typing import List, Optional
 import base64
 import httpx
-import os
-from typing import List, Optional
-import mailService
-import pdfSigner
-from database import DBMock
 import json
+import mailService
+import os
+import pdfSigner
 
-openai_api_key = os.getenv('OPENAI_API_KEY')
+
+load_dotenv()
+rootPath = os.getenv('PATH_TO_ROOT')
+load_dotenv(os.path.join(rootPath, '.env'))
+
+openaiApiKey = os.getenv('OPENAI_API_KEY')
 
 EDIT_PARAGRAPH = 'editParagraph'
 DELETE_TEXT = 'deleteText'
@@ -102,13 +108,13 @@ async def requestSignature(
 ):
     if not formFields:
         raise HTTPException(status_code=400, detail='Form fields required')
-    if pdf:
-        try:
-            documentBytes = await pdf.read()  # This gives you the bytes
-        except base64.binascii.Error as e:
-            raise ValueError(f"Invalid base64 encoding in the document: {e}")
     
-    print("Dada", len(documentBytes), formFields)
+    try:
+        documentBytes = await pdf.read()  # This gives you the bytes
+    except base64.binascii.Error as e:
+        raise ValueError(f"Couldn't get bytes: {e}")
+    
+    print(f"requestSignature: {len(documentBytes)} bytes, formFields: {formFields}")
     # try:
     document = InternalDocument.initFromPath(path=path)
     document.formFields = json.loads(formFields)
@@ -123,9 +129,9 @@ async def requestSignature(
         status=DocumentStatus.WAITING
     )
     document.save()
-    if pdf:
-        with open(document.pdfPath, 'wb') as file:
-            file.write(documentBytes)
+
+    with open(document.pdfPath, 'wb') as file:
+        file.write(documentBytes)
     
     userDocumetsMap.add(document.id, document.metadata.senderEmail)
     userDocumetsMap.add(document.id, document.metadata.signerEmail)
@@ -156,16 +162,12 @@ async def getDocument(
     #     docxBytes = file.read()
     #     docxBase64Encoded = base64.b64encode(docxBytes).decode('utf-8')
     
-    pdfBase64Encoded, signedPdfBase64Encoded = '', ''
-    try:
-        with open(document.pdfPath, 'rb') as file:
-            pdfbytes = file.read()
-            pdfBase64Encoded = base64.b64encode(pdfbytes).decode('utf-8')
+    with open(document.pdfPath, 'rb') as file:
+        pdfbytes = file.read()
+        pdfBase64Encoded = base64.b64encode(pdfbytes).decode('utf-8')
         # with open(document.signPdfPath, 'rb') as file:
         #     signedPdfBytes = file.read()
         #     signedPdfBase64Encoded = base64.b64encode(signedPdfBytes).decode('utf-8')
-    except:
-        pass
         
     content = {
         'id': document.id, 
@@ -233,7 +235,7 @@ async def getDocumentsList(userEmail: str = Query(..., alias='user_email')):
 
 @app.get('/token')
 async def getToken():
-    if not openai_api_key:
+    if not openaiApiKey:
         raise HTTPException(status_code=500, detail='OPENAI_API_KEY not set in environment')
 
     try:
@@ -241,7 +243,7 @@ async def getToken():
             response = await client.post(
                 'https://api.openai.com/v1/realtime/sessions',
                 headers={
-                    'Authorization': f'Bearer {openai_api_key}',
+                    'Authorization': f'Bearer {openaiApiKey}',
                     'Content-Type': 'application/json',
                 },
                 json={

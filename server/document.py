@@ -5,7 +5,7 @@ import json
 import os
 from typing import List
 
-
+rootPath = os.getenv('PATH_TO_ROOT')
 class FieldType(Enum):
     NAME = 'name'
     DATE = 'date'
@@ -125,7 +125,7 @@ class InternalDocument:
 
 
 if __name__ == '__main__':
-    path = '../data/startup.docx'
+    path = os.path.join(rootPath, 'data/startup.docx')
     document = InternalDocument.initFromPath(path)
     print(document.docxPath, document.formFieldsPath, document.metadataPath, document.pdfPath, document.signPdfPath)
 

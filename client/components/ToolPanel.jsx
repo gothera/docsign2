@@ -1,67 +1,68 @@
 import { useEffect, useState } from "react";
+import toolsDefinition from '../../toolsDefinition.json'
 import 'fs'
 
 const sessionUpdate = {
   type: "session.update",
   session: {
-    tools: [
-      {
-        type: "function",
-        name: "edit_paragraph",
-        description: "Edit the content of a single paragraph",
-        parameters: {
-          type: "object",
-          strict: true,
-          properties: {
-            oldParagraph: {
-              type: "string",
-              description: "The text of the paragraph you want to change. This should contain only the pure text of the old paragraphs, without tags like <h2>, <p>, </p>, etc."
-            },
-            newParagraph: {
-              type: "string",
-              description: "The text of the new paragraph.",
-            },
-          },
-          required: ["oldParagraph", "newParagraph"],
-        },
-      },
-      {
-        type: "function",
-        name: "delete_text",
-        description: "Delete some text",
-        parameters: {
-          type: "object",
-          strict: true,
-          properties: {
-            text: {
-              type: "string",
-              description: "The text you want to delete."
-            },
-          },
-          required: ["text"],
-        }
-      },
-      {
-        type: "function",
-        name: "add_paragraph",
-        description: "add a paragraph at a point defined by sentences before that",
-        parameters: {
-          type: "object",
-          strict: true,
-          properties: {
-            textBefore: {
-              type: "string",
-              description: "The text after which you want to add the paragraph"
-            },
-            addedParagraph: {
-              type: "string",
-              description: "The text you want to add."
-            },
-          },
-          required: ["text", "addedParagraph"],
-        },
-      }
-    ],
+    tools: toolsDefinition,
+    //   {
+    //     type: "function",
+    //     name: "edit_paragraph",
+    //     description: "Edit the content of a single paragraph",
+    //     parameters: {
+    //       type: "object",
+    //       strict: true,
+    //       properties: {
+    //         oldParagraph: {
+    //           type: "string",
+    //           description: "The text of the paragraph you want to change. This should contain only the pure text of the old paragraphs, without tags like <h2>, <p>, </p>, etc."
+    //         },
+    //         newParagraph: {
+    //           type: "string",
+    //           description: "The text of the new paragraph.",
+    //         },
+    //       },
+    //       required: ["oldParagraph", "newParagraph"],
+    //     },
+    //   },
+    //   {
+    //     type: "function",
+    //     name: "delete_text",
+    //     description: "Delete some text",
+    //     parameters: {
+    //       type: "object",
+    //       strict: true,
+    //       properties: {
+    //         text: {
+    //           type: "string",
+    //           description: "The text you want to delete."
+    //         },
+    //       },
+    //       required: ["text"],
+    //     }
+    //   },
+    //   {
+    //     type: "function",
+    //     name: "add_paragraph",
+    //     description: "add a paragraph at a point defined by sentences before that",
+    //     parameters: {
+    //       type: "object",
+    //       strict: true,
+    //       properties: {
+    //         textBefore: {
+    //           type: "string",
+    //           description: "The text after which you want to add the paragraph"
+    //         },
+    //         addedParagraph: {
+    //           type: "string",
+    //           description: "The text you want to add."
+    //         },
+    //       },
+    //       required: ["text", "addedParagraph"],
+    //     },
+    //   }
+    // ],
     tool_choice: "auto",
   },
 };

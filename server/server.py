@@ -20,8 +20,11 @@ rootPath = os.getenv('PATH_TO_ROOT')
 load_dotenv(os.path.join(rootPath, '.env'))
 
 sendMailEnabled = os.getenv('SEND_MAIL_ENABLED', False)
-documentsFolder = os.path.join(rootPath, 'data')
-print(rootPath, documentsFolder)
+urlClientSign = os.getenv('URL_CLIENT_SIGN', 'http://localhost:3000/sign/')
+
+documentsFolder = os.path.join(rootPath, os.getenv('VITE_DATA_PATH', 'data'))
+processedDocumentsFolder = os.path.join(documentsFolder, 'processed')
+print(rootPath, documentsFolder, processedDocumentsFolder)
 
 openaiApiKey = os.getenv('OPENAI_API_KEY')
 
@@ -63,11 +66,11 @@ async def callFunction(
 ):
     print(f'function-call: docxPath: {docxPath}, functionName: {functionName}, arguments: {arguments}')
     
-    outputFileName = os.path.join(documentsFolder, os.path.basename(docxPath))
-    outputFileName = outputFileName if '_output.pdf' in outputFileName else outputFileName[:-5] + '_output.docx' 
+    os.makedirs(processedDocumentsFolder, exist_ok=True)
+    outputFilePath = os.path.join(processedDocumentsFolder, os.path.basename(docxPath))
     
     try:
-        editor = DocEditor(docxPath, debug=True, outputFileName=outputFileName)
+        editor = DocEditor(docxPath, debug=True, outputFilePath=outputFilePath)
     except Exception as e:
         print(e)
         raise HTTPException(status_code=401, detail=f'document_id must be a valid path (exception: {e})')
@@ -94,11 +97,10 @@ async def callFunction(
         raise HTTPException(status_code=400, detail=f'function_name must be in {[EDIT_PARAGRAPH, DELETE_TEXT, ADD_PARAGRAPH]}')
 
     try:
-        with open(outputFileName, 'rb') as file:
+        with open(outputFilePath, 'rb') as file:
             documentBytes = file.read()
             base64Encoded = base64.b64encode(documentBytes).decode('utf-8')
-        return JSONResponse(content={'content': base64Encoded}, status_code=200)
-        # return JSONResponse(content={'content': base64Encoded, 'outputFileName': outputFileName}, status_code=200)
+        return JSONResponse(content={'content': base64Encoded, 'outputFilePath': outputFilePath, 'outputFileName': outputFilePath[len(documentsFolder):]}, status_code=200)
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to read output document: {str(e)}')
@@ -120,7 +122,8 @@ async def requestSignature(
     except base64.binascii.Error as e:
         raise ValueError(f"Couldn't get bytes: {e}")
     
-    path = os.path.join(documentsFolder, os.path.basename(path))
+    os.makedirs(processedDocumentsFolder, exist_ok=True)
+    path = os.path.join(processedDocumentsFolder, os.path.basename(path))
     
     print(f"requestSignature: {len(documentBytes)} bytes, formFields: {formFields}\nFull path: {path}")
     # try:
@@ -135,7 +138,6 @@ async def requestSignature(
         signerName=signerName if signerName else defaultName,
         status=DocumentStatus.WAITING
     )
-    print(document.path)
     document.save()
 
     with open(document.pdfPath, 'wb') as file:
@@ -144,7 +146,7 @@ async def requestSignature(
     userDocumetsMap.add(document.id, document.metadata.senderEmail)
     userDocumetsMap.add(document.id, document.metadata.signerEmail)
 
-    url = f'http://localhost:3000/sign/{document.id}'
+    url = urlClientSign + document.id
     print(url)
     
     if sendMailEnabled: 
@@ -167,16 +169,9 @@ async def getDocument(
     if not os.path.exists(document.formFieldsPath):
         raise ValueError(f'Document with id {id} decoded {document.formFieldsPath} was not found')
     
-    # with open(document.docxPath, 'rb') as file:
-    #     docxBytes = file.read()
-    #     docxBase64Encoded = base64.b64encode(docxBytes).decode('utf-8')
-    
     with open(document.pdfPath, 'rb') as file:
         pdfbytes = file.read()
         pdfBase64Encoded = base64.b64encode(pdfbytes).decode('utf-8')
-        # with open(document.signPdfPath, 'rb') as file:
-        #     signedPdfBytes = file.read()
-        #     signedPdfBase64Encoded = base64.b64encode(signedPdfBytes).decode('utf-8')
         
     content = {
         'id': document.id, 
@@ -216,7 +211,7 @@ async def sign(
             if ff['type'] == 'Signature':
                 signff = ff
         
-        if ff:
+        if signff:
             pdfSigner.signPDF(document.pdfPath, document.metadata.signerName, document.metadata.signerEmail, document.signPdfPath, 
                               pageNum=ff['pageNumber'] - 1, x=ff['x'], y=ff['y'], width=ff['width'], height=ff['height'])
         else:

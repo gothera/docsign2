@@ -4,16 +4,15 @@ import * as XLSX from 'xlsx';
 import { Document, Page, pdfjs } from 'react-pdf';
 
 if (typeof window !== 'undefined') {
-  pdfjs.GlobalWorkerOptions.workerSrc = '/Users/cosmincojocaru/docsign2/public/pdfjs/pdf.worker.min.js';
+  pdfjs.GlobalWorkerOptions.workerSrc = import.meta.env.VITE_PATH_TO_ROOT + 'public/pdfjs/pdf.worker.min.js'
 }
 
 
-function DocumentViewer({ documentContent, onDocumentUpload }) {
+function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilename}) {
   const fileInputRef = useRef(null);
   const canvasRef = useRef();
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfUrl, setPdfUrl] = useState(null);
-  const [filename, setFilename] = useState(null)
   const [isConverting, setIsConverting] = useState(false);
   const documentRef = useRef(null);
 

@@ -1,4 +1,4 @@
-import { join, dirname, resolve } from "path";
+import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import react from "@vitejs/plugin-react";
 

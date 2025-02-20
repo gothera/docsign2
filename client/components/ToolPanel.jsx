@@ -81,6 +81,8 @@ export default function ToolPanel({
   isSessionActive,
   sendClientEvent,
   events,
+  filename,
+  setFilename,
   documentContent,
   setDocumentContent
 }) {
@@ -92,39 +94,26 @@ export default function ToolPanel({
 
     const firstEvent = events[events.length - 1];
     if (!functionAdded && firstEvent.type === "session.created") {
-      // sessionUpdate.tools[0].description = documentContent
       if (documentContent !== "") {
         sessionUpdate.session.instructions = "This is the content of a document: " + documentContent.content
-        console.log("Dada", sessionUpdate)
+        console.log("sessionUpdate: ", sessionUpdate)
       }
       sendClientEvent(sessionUpdate);
       setFunctionAdded(true);
     }
 
     const mostRecentEvent = events[0];
-    if (
-      mostRecentEvent.type === "response.done" &&
-      mostRecentEvent.response.output
-    ) {
+    if ( mostRecentEvent.type === "response.done" && mostRecentEvent.response.output ) {
       mostRecentEvent.response.output.forEach((output) => {
         {
-          console.log(output, "Dada")  
+          console.log("event type response.done output: ", output)
+          console.log("filename: ", import.meta.env.VITE_DATA_PATH + filename)
         }
-        if (
-          output.type === "function_call" &&
-          output.name === "edit_paragraph"
-        ) {
+        if (output.type === "function_call" && output.name === "edit_paragraph") {
           setFunctionCallOutput(output);
-          // setTimeout(() => {
-          //   sendClientEvent({
-          //     type: "response.create",
-          //     response: {
-          //       instructions: "Ask if they want to make any other changes to the document.",
-          //     },
-          //   });
-          // }, 500);
           const {newParagraph} = JSON.parse(output.arguments);
           const {oldParagraph} = JSON.parse(output.arguments);
+          const fullPath = import.meta.env.VITE_DATA_PATH + filename;
           (async () => {
             try {
               const resp = await fetch('http://localhost:8000/function-call', {
@@ -133,7 +122,7 @@ export default function ToolPanel({
                   'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                  document_id: "/Users/cosmincojocaru/docsign2/startup.docx",
+                  document_id: fullPath,
                   function_name: "editParagraph",
                   arguments: {
                     oldParagraph: oldParagraph,
@@ -143,6 +132,7 @@ export default function ToolPanel({
               });
               
               const data = await resp.json();
+              setFilename(data.outputFileName)
               const mammoth = await import('mammoth');
               const options = {
                 styleMap: [

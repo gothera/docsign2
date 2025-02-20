@@ -12,16 +12,12 @@ threshold = 98
 
 class DocEditor:
 
-    def __init__(self, document: Union[Document, str] = None, outputFileName: Optional[str] = '', debug: Optional[bool] = False):
+    def __init__(self, document: Union[Document, str] = None, outputFilePath: Optional[str] = '', debug: Optional[bool] = False):
         if document is None:
             raise ValueError("document cannot be None")
-        if isinstance(document, str):
-            if not outputFileName:
-                outputFileName = document[:-5] + '_output.docx'
-            document = Document(document)
         
         self.debug = debug
-        self.outputFileName = outputFileName
+        self.outputFileName = outputFilePath
         self.document: Document = document
 
     def __barbaricSplit(self, no: int, text: str) -> List[str]:

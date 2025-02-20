@@ -1,17 +1,15 @@
-import { useEffect, useRef, useState } from "react";
-import { Outlet, Link } from 'react-router-dom';
-import logo from "/assets/openai-logomark.svg";
+import { useEffect, useRef, useState } from "react";;
 import EventLog from "./EventLog";
 import SessionControls from "./SessionControls";
 import ToolPanel from "./ToolPanel";
 import DocumentViewer from "./DocumentViewer";
-import PDFSigner from "./PDFSigner";
 
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [events, setEvents] = useState([]);
   const [dataChannel, setDataChannel] = useState(null);
   const [documentContent, setDocumentContent] = useState(null);
+  const [filename, setFilename] = useState(null);
   const peerConnection = useRef(null);
   const audioElement = useRef(null);
 
@@ -84,6 +82,26 @@ export default function App() {
     }
   }
 
+  // Send a text message to the model
+  function sendTextMessage(message) {
+    const event = {
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: message,
+          },
+        ],
+      },
+    };
+
+    sendClientEvent(event);
+    sendClientEvent({ type: "response.create" });
+  }
+
   function handleDocumentUpload(content) {
     console.log('Document upload handler called with content:', content);
     setDocumentContent(content);
@@ -120,6 +138,8 @@ export default function App() {
             <DocumentViewer 
               documentContent={documentContent} 
               onDocumentUpload={handleDocumentUpload}
+              filename={filename}
+              setFilename={setFilename}
             />
             <EventLog events={events} />
           </section>
@@ -128,6 +148,7 @@ export default function App() {
               startSession={startSession}
               stopSession={stopSession}
               sendClientEvent={sendClientEvent}
+              sendTextMessage={sendTextMessage}
               isSessionActive={isSessionActive}
             />
           </section>
@@ -137,6 +158,8 @@ export default function App() {
             sendClientEvent={sendClientEvent}
             events={events}
             isSessionActive={isSessionActive}
+            filename={filename}
+            setFilename={setFilename}
             documentContent={documentContent}
             setDocumentContent={setDocumentContent}
           />

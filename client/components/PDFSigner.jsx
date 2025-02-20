@@ -5,7 +5,7 @@ import { useParams } from 'react-router-dom';  // Import from react-router-dom, 
 import { Document, Page, pdfjs } from 'react-pdf';
 
 if (typeof window !== 'undefined') {
-  pdfjs.GlobalWorkerOptions.workerSrc = '/Users/cosmincojocaru/docsign2/public/pdfjs/pdf.worker.min.js';
+  pdfjs.GlobalWorkerOptions.workerSrc = import.meta.env.VITE_PATH_TO_ROOT + 'public/pdfjs/pdf.worker.min.js'
 }
 
 const PDFSigner = () => {

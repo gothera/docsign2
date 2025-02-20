@@ -1,4 +1,3 @@
-// /Users/cosmincojocaru/realitime/openai-realtime-console/client/components/SessionControls.jsx
 import { useState } from "react";
 import { CloudLightning, CloudOff, MessageSquare } from "react-feather";
 import Button from "./Button";

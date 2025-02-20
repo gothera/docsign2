@@ -38,3 +38,6 @@ userDocumentTable.json
 # But do not ignore PDFs in the data directory
 !data/*.pdf
 !data/*.docx
+
+data/processed/*.pdf
+data/processed/*.docx

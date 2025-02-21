@@ -15,7 +15,9 @@ class DocEditor:
     def __init__(self, document: Union[Document, str] = None, outputFilePath: Optional[str] = '', debug: Optional[bool] = False):
         if document is None:
             raise ValueError("document cannot be None")
-        
+        if isinstance(document, str):
+            document = Document(document)
+
         self.debug = debug
         self.outputFileName = outputFilePath
         self.document: Document = document
@@ -33,7 +35,7 @@ class DocEditor:
         if not oldText:
             if newText:
                 raise ValueError('oldText can not be empty')
-            return doc
+            return doc  
         if save and not self.outputFileName:
             raise ValueError('The document can not be save if an outputFileName was not provided in the constructor')
         

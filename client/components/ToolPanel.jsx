@@ -53,7 +53,7 @@ export default function ToolPanel({
           console.log("event type response.done output: ", output)
           console.log("filename: ", import.meta.env.VITE_DATA_PATH + filename)
         }
-        if (output.type === "function_call" && output.name === "edit_paragraph") {
+        if (output.type === "function_call" && output.name === "editParagraph") {
           setFunctionCallOutput(output);
           const {newParagraph} = JSON.parse(output.arguments);
           const {oldParagraph} = JSON.parse(output.arguments);

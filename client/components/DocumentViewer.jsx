@@ -15,6 +15,7 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
   const [pdfUrl, setPdfUrl] = useState(null);
   const [isConverting, setIsConverting] = useState(false);
   const documentRef = useRef(null);
+  const [isEditing, setIsEditing] = useState(false);
 
   // PDF specific states
   const [numPages, setNumPages] = useState(null);
@@ -27,7 +28,31 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
   const [activeDropdown, setActiveDropdown] = useState(null); // Track which box's dropdown is active
   const pageRefs = useRef({});
 
-  
+  const handleContentChange = (event) => {
+    if (!isEditing) return;
+    
+    const newContent = event.target.innerHTML;
+    // Only update if content has actually changed
+    if (newContent !== documentContent.content) {
+      onDocumentUpload({
+        type: 'document',
+        content: newContent,
+        messages: documentContent.messages
+      });
+    }
+  };
+
+  // Enable contenteditable when editing
+  const toggleEditing = () => {
+    setIsEditing(!isEditing);
+    if (documentRef.current) {
+      documentRef.current.contentEditable = !isEditing;
+      if (!isEditing) {
+        documentRef.current.focus();
+      }
+    }
+  };
+
   const convertToPdf = async () => {
     if (!documentContent || !documentRef.current) return;
     
@@ -186,6 +211,41 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
     });
   };
 
+  const renderToolbar = () => (
+    <div className="flex items-center gap-2 p-2 border-b border-gray-200 bg-gray-50">
+      <button
+        onClick={() => document.execCommand('bold')}
+        className="px-2 py-1 border rounded hover:bg-gray-200"
+        type="button"
+      >
+        B
+      </button>
+      <button
+        onClick={() => document.execCommand('italic')}
+        className="px-2 py-1 border rounded hover:bg-gray-200"
+        type="button"
+      >
+        I
+      </button>
+      <button
+        onClick={() => document.execCommand('underline')}
+        className="px-2 py-1 border rounded hover:bg-gray-200"
+        type="button"
+      >
+        U
+      </button>
+      <select 
+        onChange={(e) => document.execCommand('fontSize', false, e.target.value)}
+        className="px-2 py-1 border rounded"
+      >
+        <option value="1">Small</option>
+        <option value="3">Normal</option>
+        <option value="5">Large</option>
+        <option value="7">Huge</option>
+      </select>
+    </div>
+  );
+
     // Custom page renderer with annotation overlay
     const renderPage = ({ pageNumber }) => {
       const pageBoxes = boxes[pageNumber] || [];
@@ -273,12 +333,22 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
 
   // Cleanup URL on unmount
   useEffect(() => {
+    // Initialize document content
+    if (documentRef.current && documentContent?.type === 'document') {
+      // Only update content if we're not currently editing
+      // or if this is the initial content load (documentRef is empty)
+      if (!isEditing || !documentRef.current.innerHTML) {
+        documentRef.current.innerHTML = documentContent.content;
+      }
+    }
+
+    // Cleanup PDF URL on unmount
     return () => {
       if (pdfUrl) {
         URL.revokeObjectURL(pdfUrl);
       }
     };
-  }, [pdfUrl]);
+  }, [pdfUrl, documentContent?.content, documentContent?.type, isEditing]);
 
   const handleFileChange = async (event) => {
     const file = event.target.files[0];
@@ -375,40 +445,11 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
   }
 
   const renderDocumentContent = () => {
-    if (documentContent.type === 'spreadsheet') {
-      return (
-        <div className="flex-1 overflow-auto p-6" ref={documentRef}>
-          {Object.entries(documentContent.sheets).map(([sheetName, sheetData]) => (
-            <div key={sheetName} className="mb-8">
-              <div className="bg-gray-100 px-4 py-2 text-sm font-medium border border-gray-200 rounded-t">
-                {sheetName}
-              </div>
-              <div className="overflow-x-auto border border-t-0 border-gray-200 rounded-b">
-                <table className="w-full">
-                  <tbody>
-                    {Array.isArray(sheetData) && sheetData.map((row, rowIndex) => (
-                      <tr key={rowIndex} className="border-b border-gray-200 last:border-0">
-                        {Array.isArray(row) && row.map((cell, cellIndex) => (
-                          <td 
-                            key={cellIndex}
-                            className="border-r border-gray-200 last:border-0 p-2 min-w-[100px]"
-                          >
-                            {cell?.toString() || ''}
-                          </td>
-                          ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ))}
-        </div>
-      );
-    } else if (documentContent.type === 'document') {
+    if (documentContent.type === 'document') {
       return (
         <div className="flex-1 overflow-auto">
           <div className="max-w-[816px] min-h-full mx-auto bg-white shadow-lg">
+            {isEditing && renderToolbar()}
             <div 
               ref={documentRef}
               className="p-12 min-h-full word-document"
@@ -418,114 +459,15 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
                 lineHeight: '1.5',
                 color: '#333',
               }}
-              dangerouslySetInnerHTML={{ __html: documentContent.content }}
+              contentEditable={isEditing}
+              suppressContentEditableWarning={true}
+              onInput={handleContentChange}
+              onBlur={() => {
+                if (!isEditing) return;
+                handleContentChange({ target: documentRef.current });
+              }}
             />
           </div>
-          <style jsx global>{`
-            .word-document {
-              counter-reset: h1counter h2counter h3counter;
-            }
-            
-            .word-document h1 {
-              font-family: 'Calibri Light', sans-serif;
-              font-size: 16pt;
-              color: #2F5496;
-              font-weight: normal;
-              margin-top: 24pt;
-              margin-bottom: 6pt;
-            }
-
-            .word-document h2 {
-              font-family: 'Calibri Light', sans-serif;
-              font-size: 13pt;
-              color: #2F5496;
-              font-weight: normal;
-              margin-top: 20pt;
-              margin-bottom: 6pt;
-            }
-
-            .word-document h3 {
-              font-family: 'Calibri Light', sans-serif;
-              font-size: 12pt;
-              color: #1F3763;
-              font-weight: normal;
-              margin-top: 16pt;
-              margin-bottom: 4pt;
-            }
-
-            .word-document p {
-              margin: 0 0 8pt 0;
-              line-height: 1.5;
-            }
-
-            .word-document table.doc-table {
-              border-collapse: collapse;
-              width: 100%;
-              margin: 12pt 0;
-            }
-
-            .word-document table.doc-table td,
-            .word-document table.doc-table th {
-              border: 1px solid #BFBFBF;
-              padding: 7pt 9pt;
-              vertical-align: top;
-              font-size: 11pt;
-            }
-
-            .word-document table.doc-table th {
-              background-color: #F2F2F2;
-              font-weight: bold;
-            }
-
-            .word-document ul,
-            .word-document ol {
-              margin: 0 0 8pt 0;
-              padding-left: 40px;
-            }
-
-            .word-document li {
-              margin-bottom: 4pt;
-            }
-
-            .word-document img {
-              max-width: 100%;
-              height: auto;
-              margin: 12pt 0;
-            }
-
-            .word-document strong {
-              font-weight: bold;
-            }
-
-            .word-document em {
-              font-style: italic;
-            }
-
-            /* Default Word list styles */
-            .word-document ul {
-              list-style-type: disc;
-            }
-
-            .word-document ul ul {
-              list-style-type: circle;
-            }
-
-            .word-document ul ul ul {
-              list-style-type: square;
-            }
-
-            .word-document ol {
-              list-style-type: decimal;
-            }
-
-            .word-document ol ol {
-              list-style-type: lower-alpha;
-            }
-
-            .word-document ol ol ol {
-              list-style-type: lower-roman;
-            }
-          `}</style>
         </div>
       );
     }
@@ -534,10 +476,21 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
 
   return (
     <div className="flex h-full bg-white">
-      {/* Left panel - Original document view */}
       <div className={`flex flex-col ${showPdfPreview ? 'w-1/2' : 'w-full'} border-r border-gray-200 transition-all duration-300`}>
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold">Document View</h2>
+          <div className="flex items-center gap-4">
+            <h2 className="text-lg font-semibold">Document View</h2>
+            <button
+              onClick={toggleEditing}
+              className={`px-4 py-2 rounded-lg transition-colors ${
+                isEditing 
+                  ? 'bg-green-600 text-white hover:bg-green-700'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {isEditing ? 'Save' : 'Edit'}
+            </button>
+          </div>
           <button
             onClick={convertToPdf}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"

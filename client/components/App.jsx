@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";;
-import EventLog from "./EventLog";
+import ChatPanel from "./ChatPanel";
 import SessionControls from "./SessionControls";
-import ToolPanel from "./ToolPanel";
 import DocumentViewer from "./DocumentViewer";
+import Sidebar from './Sidebar';
 
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -25,10 +25,13 @@ export default function App() {
     audioElement.current.autoplay = true;
     pc.ontrack = (e) => (audioElement.current.srcObject = e.streams[0]);
 
-    // Add local audio track for microphone input in the browser
-    const ms = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-    });
+    const audioContext = new AudioContext();
+    let ms = audioContext.createMediaStreamDestination().stream;
+    if (import.meta.env?.VITE_USE_MIC?.toLowerCase?.() === 'true') {
+      console.log('use mic')
+      // Add local audio track for microphone input in the browser
+      ms = await navigator.mediaDevices.getUserMedia({audio: true});
+    }
     pc.addTrack(ms.getTracks()[0]);
 
     // Set up data channel for sending and receiving events
@@ -122,47 +125,39 @@ export default function App() {
 
   return (
     <>
-      {/* <nav className="absolute top-0 left-0 right-0 h-16 flex items-center">
-        <div className="flex items-center gap-4 w-full m-4 pb-2 border-0 border-b border-solid border-gray-200">
-          <img style={{ width: "24px" }} src={logo} />
-          <h1>Document Editor Console</h1>
-          <div className="ml-auto flex gap-4">
-            <Link to="/" className="text-blue-600 hover:text-blue-800">Home</Link>
-            <Link to="/sign" className="text-blue-600 hover:text-blue-800">Sign</Link>
-          </div>
-        </div>
-      </nav> */}
-      <main className="absolute top-16 left-0 right-0 bottom-0">
-        <section className="absolute top-0 left-0 right-[100px] bottom-0 flex">
-          <section className="absolute top-0 left-0 right-0 bottom-32 px-4 overflow-y-auto">
+      <main className="absolute top-2 left-0 right-0 bottom-0 flex">
+        <Sidebar 
+          setDocumentContent={setDocumentContent} 
+          setFilename={setFilename} 
+        />
+        <section className="flex-1 relative">
+          <section className="absolute top-0 left-0 right-[300px] bottom-0 px-4 overflow-y-auto">
             <DocumentViewer 
               documentContent={documentContent} 
               onDocumentUpload={handleDocumentUpload}
               filename={filename}
               setFilename={setFilename}
             />
-            <EventLog events={events} />
           </section>
-          <section className="absolute h-32 left-0 right-0 bottom-0 p-4">
-            <SessionControls
-              startSession={startSession}
-              stopSession={stopSession}
-              sendClientEvent={sendClientEvent}
-              sendTextMessage={sendTextMessage}
-              isSessionActive={isSessionActive}
-            />
+          <section className="absolute top-0 w-[300px] right-0 bottom-0 p-4 overflow-y-auto">
+            <section className="absolute top-0 left-0 right-0 bottom-44 px-4 overflow-y-auto">
+              <ChatPanel events={events} />
+            </section>
+            <section className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200">
+              <SessionControls
+                startSession={startSession}
+                stopSession={stopSession}
+                sendClientEvent={sendClientEvent}
+                sendTextMessage={sendTextMessage}
+                isSessionActive={isSessionActive}
+                filename={filename}
+                setFilename={setFilename}
+                documentContent={documentContent}
+                setDocumentContent={setDocumentContent}
+                events={events}
+              />
+            </section>
           </section>
-        </section>
-        <section className="absolute top-0 w-[100px] right-0 bottom-0 p-4 pt-0 overflow-y-auto">
-          <ToolPanel
-            sendClientEvent={sendClientEvent}
-            events={events}
-            isSessionActive={isSessionActive}
-            filename={filename}
-            setFilename={setFilename}
-            documentContent={documentContent}
-            setDocumentContent={setDocumentContent}
-          />
         </section>
       </main>
     </>

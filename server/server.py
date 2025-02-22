@@ -19,7 +19,7 @@ load_dotenv()
 rootPath = os.getenv('PATH_TO_ROOT')
 load_dotenv(os.path.join(rootPath, '.env'))
 
-sendMailEnabled = os.getenv('SEND_MAIL_ENABLED', False)
+sendMailEnabled = bool(os.getenv('SEND_MAIL_ENABLED', False))
 urlClientSign = os.getenv('URL_CLIENT_SIGN', 'http://localhost:3000/sign/')
 
 documentsFolder = os.path.join(rootPath, os.getenv('VITE_DATA_PATH', 'data'))
@@ -38,7 +38,7 @@ TEXT = 'text'
 TEXT_BEFORE = 'textBefore'
 ADDED_TEXT = 'addedText'
 
-defaultEmail = 'cosmin@gmail.com'
+defaultEmail = 'cosminn01rm@gmail.com'
 defaultName = 'Cosmin'
 
 # @asynccontextmanager
@@ -100,7 +100,7 @@ async def callFunction(
         with open(outputFilePath, 'rb') as file:
             documentBytes = file.read()
             base64Encoded = base64.b64encode(documentBytes).decode('utf-8')
-        return JSONResponse(content={'content': base64Encoded, 'outputFilePath': outputFilePath, 'outputFileName': outputFilePath[len(documentsFolder):]}, status_code=200)
+        return JSONResponse(content={'content': base64Encoded, 'outputFileName': outputFilePath[len(documentsFolder):]}, status_code=200)
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to read output document: {str(e)}')
@@ -175,6 +175,7 @@ async def getDocument(
         
     content = {
         'id': document.id, 
+        'filename': document.docxPath[len(documentsFolder):],
         'pdf': pdfBase64Encoded, 
         'form_fields': document.formFields,
     }

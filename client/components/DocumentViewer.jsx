@@ -27,9 +27,6 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
   const [activeDropdown, setActiveDropdown] = useState(null); // Track which box's dropdown is active
   const pageRefs = useRef({});
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedContent, setEditedContent] = useState('');
-
   
   const convertToPdf = async () => {
     if (!documentContent || !documentRef.current) return;
@@ -310,7 +307,6 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
           documentData.sheets[sheetName] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
         });
 
-        setEditedContent(result.value);
         onDocumentUpload(documentData);
       } else if (file.name.endsWith('.docx')) {
         // Dynamically import mammoth
@@ -344,30 +340,12 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
           messages: result.messages
         };
 
-        setEditedContent(result.value);
-        onDocumentUpload(documentData);      }
+        onDocumentUpload(documentData);
+      }
     } catch (error) {
       console.error('Error reading file:', error);
     }
   };
-
-  const handleContentChange = (event) => {
-    const newContent = event.target.innerHTML;
-    setEditedContent(newContent);
-    
-    // Update the document content in the parent component
-    if (documentContent.type === 'document') {
-      onDocumentUpload({
-        ...documentContent,
-        content: newContent
-      });
-    }
-  };
-
-  const toggleEditing = () => {
-    setIsEditing(!isEditing);
-  };
-
 
   if (!documentContent) {
     return (
@@ -396,7 +374,7 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
     );
   }
 
- const renderDocumentContent = () => {
+  const renderDocumentContent = () => {
     if (documentContent.type === 'spreadsheet') {
       return (
         <div className="flex-1 overflow-auto p-6" ref={documentRef}>
@@ -417,7 +395,7 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
                           >
                             {cell?.toString() || ''}
                           </td>
-                        ))}
+                          ))}
                       </tr>
                     ))}
                   </tbody>
@@ -430,45 +408,24 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
     } else if (documentContent.type === 'document') {
       return (
         <div className="flex-1 overflow-auto">
-          <div className="flex justify-end p-4">
-            <button
-              onClick={toggleEditing}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-            >
-              {isEditing ? 'Save Changes' : 'Edit Document'}
-            </button>
-          </div>
           <div className="max-w-[816px] min-h-full mx-auto bg-white shadow-lg">
             <div 
               ref={documentRef}
-              className={`p-12 min-h-full word-document ${isEditing ? 'editing' : ''}`}
+              className="p-12 min-h-full word-document"
               style={{
                 fontFamily: 'Calibri, sans-serif',
                 fontSize: '11pt',
                 lineHeight: '1.5',
                 color: '#333',
               }}
-              contentEditable={isEditing}
-              onInput={handleContentChange}
-              dangerouslySetInnerHTML={{ __html: editedContent || documentContent.content }}
+              dangerouslySetInnerHTML={{ __html: documentContent.content }}
             />
           </div>
           <style jsx global>{`
             .word-document {
               counter-reset: h1counter h2counter h3counter;
-              outline: none;
             }
             
-            .word-document.editing {
-              border: 1px solid #e2e8f0;
-              background-color: #ffffff;
-            }
-            
-            .word-document.editing:focus {
-              border-color: #4299e1;
-              box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
-            }
-
             .word-document h1 {
               font-family: 'Calibri Light', sans-serif;
               font-size: 16pt;
@@ -544,6 +501,7 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
               font-style: italic;
             }
 
+            /* Default Word list styles */
             .word-document ul {
               list-style-type: disc;
             }

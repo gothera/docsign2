@@ -468,6 +468,111 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
               }}
             />
           </div>
+          <style jsx global>{`
+            .word-document {
+              counter-reset: h1counter h2counter h3counter;
+            }
+            
+            .word-document h1 {
+              font-family: 'Calibri Light', sans-serif;
+              font-size: 16pt;
+              color: #2F5496;
+              font-weight: normal;
+              margin-top: 24pt;
+              margin-bottom: 6pt;
+            }
+
+            .word-document h2 {
+              font-family: 'Calibri Light', sans-serif;
+              font-size: 13pt;
+              color: #2F5496;
+              font-weight: normal;
+              margin-top: 20pt;
+              margin-bottom: 6pt;
+            }
+
+            .word-document h3 {
+              font-family: 'Calibri Light', sans-serif;
+              font-size: 12pt;
+              color: #1F3763;
+              font-weight: normal;
+              margin-top: 16pt;
+              margin-bottom: 4pt;
+            }
+
+            .word-document p {
+              margin: 0 0 8pt 0;
+              line-height: 1.5;
+            }
+
+            .word-document table.doc-table {
+              border-collapse: collapse;
+              width: 100%;
+              margin: 12pt 0;
+            }
+
+            .word-document table.doc-table td,
+            .word-document table.doc-table th {
+              border: 1px solid #BFBFBF;
+              padding: 7pt 9pt;
+              vertical-align: top;
+              font-size: 11pt;
+            }
+
+            .word-document table.doc-table th {
+              background-color: #F2F2F2;
+              font-weight: bold;
+            }
+
+            .word-document ul,
+            .word-document ol {
+              margin: 0 0 8pt 0;
+              padding-left: 40px;
+            }
+
+            .word-document li {
+              margin-bottom: 4pt;
+            }
+
+            .word-document img {
+              max-width: 100%;
+              height: auto;
+              margin: 12pt 0;
+            }
+
+            .word-document strong {
+              font-weight: bold;
+            }
+
+            .word-document em {
+              font-style: italic;
+            }
+
+            /* Default Word list styles */
+            .word-document ul {
+              list-style-type: disc;
+            }
+
+            .word-document ul ul {
+              list-style-type: circle;
+            }
+
+            .word-document ul ul ul {
+              list-style-type: square;
+            }
+
+            .word-document ol {
+              list-style-type: decimal;
+            }
+
+            .word-document ol ol {
+              list-style-type: lower-alpha;
+            }
+
+            .word-document ol ol ol {
+              list-style-type: lower-roman;
+            }
+          `}</style>
         </div>
       );
     }

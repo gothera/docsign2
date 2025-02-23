@@ -1,7 +1,5 @@
-// First, import required dependencies at app level or in a separate file:
-// npm install react-pdf pdfjs-dist
-import { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';  // Import from react-router-dom, not react
+import { useState, useEffect, useRef, memo, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
@@ -9,27 +7,91 @@ if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = import.meta.env.VITE_PATH_TO_ROOT + 'public/pdfjs/pdf.worker.min.js'
 }
 
+// Individual form field input with local state
+const FormFieldInput = memo(({ 
+  field, 
+  pageRect,
+  onValueChange 
+}) => {
+  const [value, setValue] = useState('');
+  const adjustedX = field.x + pageRect.left;
+  const adjustedY = field.y + pageRect.top;
+
+  const handleBlur = useCallback(() => {
+    onValueChange(field.id, value);
+  }, [field.id, value, onValueChange]);
+
+  return (
+    <div 
+      className="absolute border-2 border-blue-500 bg-white bg-opacity-90" 
+      style={{ 
+        left: `${adjustedX}px`,
+        top: `${adjustedY}px`,
+        height: `${field.height}px`,
+        width: `${field.width}px`,
+      }}
+    >
+      <div className="text-xs text-black-500 font-semibold absolute -top-4 left-0">
+        {field.type}
+      </div>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={handleBlur}
+        className="w-full h-full px-1 bg-transparent border-none focus:outline-none text-black"
+        style={{
+          fontSize: '12px',
+          lineHeight: `${field.height}px`,
+        }}
+      />
+    </div>
+  );
+});
+
+// Form fields container
+const FormFieldsOverlay = memo(({ 
+  formFields, 
+  pageRect,
+  onFieldValueChange
+}) => {
+  return (
+    <div className="absolute inset-0">
+      {formFields.map((field) => (
+        <FormFieldInput
+          key={field.id}
+          field={field}
+          pageRect={pageRect}
+          onValueChange={onFieldValueChange}
+        />
+      ))}
+    </div>
+  );
+});
+
 const PDFSigner = () => {
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [documentData, setDocumentData] = useState(null);
-  const [scale, setScale] = useState(1.0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [pageRect, setPageRect] = useState(null);
   const { documentID } = useParams();
   const pageRef = useRef(null);
+  const fieldValuesRef = useRef({});
 
-  // Function to fill and save the PDF
+  const handleFieldValueChange = useCallback((fieldId, value) => {
+    fieldValuesRef.current[fieldId] = value;
+  }, []);
+
   const fillAndSavePDF = async () => {
     try {
-      // Handle different types of PDF input
       let existingPdfBytes;
       if (pdfBlob instanceof Blob || pdfBlob instanceof File) {
         existingPdfBytes = await new Response(pdfBlob).arrayBuffer();
       } else if (pdfBlob instanceof ArrayBuffer) {
         existingPdfBytes = pdfBlob;
       } else if (typeof pdfBlob === 'string') {
-        // Handle base64 or URL string
         const response = await fetch(pdfBlob);
         existingPdfBytes = await response.arrayBuffer();
       } else {
@@ -37,35 +99,28 @@ const PDFSigner = () => {
       }
       
       const pdfDoc = await PDFDocument.load(existingPdfBytes);
-      
-      // Embed the default font
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      
-      // Get the first page
       const pages = pdfDoc.getPages();
       
-      // Process each form field
       for (const field of documentData.form_fields) {
         const page = pages[field.pageNumber - 1];
         const { width, height } = page.getSize();
+        const fieldValue = fieldValuesRef.current[field.id] || '';
+        const yPosition = height - (field.y + field.height / 2);
         
-        // Add text to the page at the specified coordinates
-        page.drawText(field.type || '', {
+        page.drawText(fieldValue, {
           x: field.x,
-          y: height - field.y, // Flip Y coordinate since PDF coordinates start from bottom
+          y: yPosition,
           size: 12,
           font: font,
+          lineHeight: field.height,
           color: rgb(0, 0, 0),
         });
       }
       
-      // Save the modified PDF
       const modifiedPdfBytes = await pdfDoc.save();
-      
-      // Create a blob from the modified PDF bytes
       const modifiedPdfBlob = new Blob([modifiedPdfBytes], { type: 'application/pdf' });
       
-      // Create a download link and trigger download
       const downloadLink = document.createElement('a');
       downloadLink.href = URL.createObjectURL(modifiedPdfBlob);
       downloadLink.download = 'filled_form.pdf';
@@ -97,99 +152,121 @@ const PDFSigner = () => {
     }
   }, [documentID]);
 
-  const onDocumentLoadSuccess = ({ numPages }) => {
-    setNumPages(numPages);
-  };
+  // Update pageRect when necessary
+  useEffect(() => {
+    const updatePageRect = () => {
+      if (pageRef.current) {
+        const rect = pageRef.current.getBoundingClientRect();
+        setPageRect(prev => {
+          // Only update if the dimensions actually changed
+          if (!prev || 
+              prev.width !== rect.width || 
+              prev.height !== rect.height || 
+              prev.left !== rect.left || 
+              prev.top !== rect.top) {
+            return rect;
+          }
+          return prev;
+        });
+      }
+    };
 
-  if (loading) {
-    return <div className="flex justify-center items-center h-64">Loading...</div>;
-  }
+    // Add resize listener
+    window.addEventListener('resize', updatePageRect);
+    
+    // Initial update with a small delay to ensure PDF is rendered
+    const timeoutId = setTimeout(updatePageRect, 100);
+    
+    return () => {
+      window.removeEventListener('resize', updatePageRect);
+      clearTimeout(timeoutId);
+    };
+  }, [pageNumber]);
+
+  const onDocumentLoadSuccess = useCallback(({ numPages }) => {
+    setNumPages(numPages);
+    setLoading(false);
+  }, []);
 
   if (error) {
     return <div className="text-red-500">Error: {error}</div>;
   }
 
-  // Convert base64 PDF to blob URL
   const pdfBlob = documentData?.pdf 
     ? URL.createObjectURL(new Blob([Uint8Array.from(atob(documentData.pdf), c => c.charCodeAt(0))], { type: 'application/pdf' }))
     : null;
 
-    return (
-      <div className="relative">
-        {pdfBlob && (
+  const currentPageFields = documentData?.form_fields
+    ?.filter(field => field.pageNumber === pageNumber) || [];
+
+  if (!pdfBlob) {
+    return <div className="flex justify-center items-center h-64">Loading document...</div>;
+  }
+
+  return (
+    <div className="relative">
       <Document
-      file={pdfBlob}
-      onLoadSuccess={onDocumentLoadSuccess}
-    >
-      <div className="relative" ref={pageRef}>
-        <Page 
-          pageNumber={pageNumber}
-          renderTextLayer={false}
-          renderAnnotationLayer={false}
-        />
-        
-        {/* Overlay container for form fields */}
-        <div className="absolute inset-0">
-          {documentData?.form_fields
-            ?.filter(field => field.pageNumber === pageNumber)
-            ?.map((field) => {
-              const pageDiv = pageRef.current;
-              if (!pageDiv) return null;
-              
-              const rect = pageDiv.getBoundingClientRect();
-              // Add offset based on the page position
-              const adjustedX = field.x + rect.left;
-              const adjustedY = field.y + rect.top;
-              console.log("Da", adjustedX, adjustedY, field.x, field.y)
-              return (
-                <div 
-                  key={field.id} 
-                  className="absolute border-2 border-blue-500 bg-blue-100 bg-opacity-20" 
-                  style={{ 
-                    left: `${adjustedX}px`,  // Using original x since it's already relative to the page
-                    top: `${adjustedY}px`,   // Using original y since it's already relative to the page
-                    height: `${field.height}px`,
-                    width: `${field.width}px`,
-                  }}
-                >
-                  <div className="text-xs text-black-500 font-big mb-1 transform -translate-y-4">
-                    {field.type}
-                  </div>
-                </div>
-              );
-            })}
+        file={pdfBlob}
+        onLoadSuccess={onDocumentLoadSuccess}
+        loading={
+          <div className="flex justify-center items-center h-64">
+            Loading PDF...
+          </div>
+        }
+      >
+        <div className="relative" ref={pageRef}>
+          <Page 
+            pageNumber={pageNumber}
+            renderTextLayer={false}
+            renderAnnotationLayer={false}
+            loading=""
+            onRenderSuccess={() => {
+              // Single update after initial render
+              if (!pageRect && pageRef.current) {
+                const rect = pageRef.current.getBoundingClientRect();
+                setPageRect(rect);
+              }
+            }}
+          />
+          
+          {pageRect && (
+            <FormFieldsOverlay
+              formFields={currentPageFields}
+              pageRect={pageRect}
+              onFieldValueChange={handleFieldValueChange}
+            />
+          )}
         </div>
-      </div>
-    </Document>
-        )}
-        <button
+      </Document>
+      
+      <button
         className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
         onClick={fillAndSavePDF}
       >
         Save Filled PDF
       </button>
-        {/* Navigation controls */}
-        <div className="mt-4 flex justify-center gap-4">
-          <button
-            className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
-            onClick={() => setPageNumber(pageNumber - 1)}
-            disabled={pageNumber <= 1}
-          >
-            Previous
-          </button>
-          <p>
-            Page {pageNumber} of {numPages}
-          </p>
-          <button
-            className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
-            onClick={() => setPageNumber(pageNumber + 1)}
-            disabled={pageNumber >= numPages}
-          >
-            Next
-          </button>
-        </div>
+      
+      <div className="mt-4 flex justify-center gap-4">
+        <button
+          className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
+          onClick={() => setPageNumber(pageNumber - 1)}
+          disabled={pageNumber <= 1}
+        >
+          Previous
+        </button>
+        <p>
+          Page {pageNumber} of {numPages}
+        </p>
+        <button
+          className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
+          onClick={() => setPageNumber(pageNumber + 1)}
+          disabled={pageNumber >= numPages}
+        >
+          Next
+        </button>
       </div>
-    );
+    </div>
+  );
 };
 
 export default PDFSigner;

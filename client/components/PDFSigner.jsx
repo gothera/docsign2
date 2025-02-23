@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, memo, useCallback } from 'react';
+import { useState, useEffect, useRef, memo, useCallback, createContext, useContext, useReducer } from 'react';
 import { useParams } from 'react-router-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
@@ -7,19 +7,58 @@ if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = import.meta.env.VITE_PATH_TO_ROOT + 'public/pdfjs/pdf.worker.min.js'
 }
 
-// Individual form field input with local state
+// Create context for form field values
+const FormFieldsContext = createContext();
+
+// Reducer for managing form field values
+const formFieldsReducer = (state, action) => {
+  switch (action.type) {
+    case 'UPDATE_FIELD':
+      return {
+        ...state,
+        [action.fieldId]: action.value
+      };
+    default:
+      return state;
+  }
+};
+
+// Context provider component
+const FormFieldsProvider = ({ children }) => {
+  const [fieldValues, dispatch] = useReducer(formFieldsReducer, {});
+
+  const updateFieldValue = useCallback((fieldId, value) => {
+    dispatch({ type: 'UPDATE_FIELD', fieldId, value });
+  }, []);
+
+  return (
+    <FormFieldsContext.Provider value={{ fieldValues, updateFieldValue }}>
+      {children}
+    </FormFieldsContext.Provider>
+  );
+};
+
+// Custom hook for accessing form field context
+const useFormFields = () => {
+  const context = useContext(FormFieldsContext);
+  if (!context) {
+    throw new Error('useFormFields must be used within a FormFieldsProvider');
+  }
+  return context;
+};
+
+// Individual form field input component
 const FormFieldInput = memo(({ 
   field, 
   pageRect,
-  onValueChange 
 }) => {
-  const [value, setValue] = useState('');
+  const { fieldValues, updateFieldValue } = useFormFields();
   const adjustedX = field.x + pageRect.left;
   const adjustedY = field.y + pageRect.top;
 
-  const handleBlur = useCallback(() => {
-    onValueChange(field.id, value);
-  }, [field.id, value, onValueChange]);
+  const handleChange = useCallback((e) => {
+    updateFieldValue(field.id, e.target.value);
+  }, [field.id, updateFieldValue]);
 
   return (
     <div 
@@ -36,9 +75,8 @@ const FormFieldInput = memo(({
       </div>
       <input
         type="text"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={handleBlur}
+        value={fieldValues[field.id] || ''}
+        onChange={handleChange}
         className="w-full h-full px-1 bg-transparent border-none focus:outline-none text-black"
         style={{
           fontSize: '12px',
@@ -49,11 +87,10 @@ const FormFieldInput = memo(({
   );
 });
 
-// Form fields container
+// Form fields overlay component
 const FormFieldsOverlay = memo(({ 
   formFields, 
   pageRect,
-  onFieldValueChange
 }) => {
   return (
     <div className="absolute inset-0">
@@ -62,30 +99,22 @@ const FormFieldsOverlay = memo(({
           key={field.id}
           field={field}
           pageRect={pageRect}
-          onValueChange={onFieldValueChange}
         />
       ))}
     </div>
   );
 });
 
-const PDFSigner = () => {
-  const [numPages, setNumPages] = useState(null);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [documentData, setDocumentData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [pageRect, setPageRect] = useState(null);
-  const { documentID } = useParams();
-  const pageRef = useRef(null);
-  const fieldValuesRef = useRef({});
-
-  const handleFieldValueChange = useCallback((fieldId, value) => {
-    fieldValuesRef.current[fieldId] = value;
-  }, []);
+// Save PDF Button component that handles PDF generation
+const SavePDFButton = memo(({ documentData }) => {
+  const { fieldValues } = useFormFields();
 
   const fillAndSavePDF = async () => {
     try {
+      const pdfBlob = documentData?.pdf 
+        ? URL.createObjectURL(new Blob([Uint8Array.from(atob(documentData.pdf), c => c.charCodeAt(0))], { type: 'application/pdf' }))
+        : null;
+
       let existingPdfBytes;
       if (pdfBlob instanceof Blob || pdfBlob instanceof File) {
         existingPdfBytes = await new Response(pdfBlob).arrayBuffer();
@@ -105,7 +134,7 @@ const PDFSigner = () => {
       for (const field of documentData.form_fields) {
         const page = pages[field.pageNumber - 1];
         const { width, height } = page.getSize();
-        const fieldValue = fieldValuesRef.current[field.id] || '';
+        const fieldValue = fieldValues[field.id] || '';
         const yPosition = height - (field.y + field.height / 2);
         
         page.drawText(fieldValue, {
@@ -131,6 +160,102 @@ const PDFSigner = () => {
     }
   };
 
+  return (
+    <button
+      className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+      onClick={fillAndSavePDF}
+    >
+      Save Filled PDF
+    </button>
+  );
+});
+
+// PDF Viewer component
+const PDFViewer = memo(({ 
+  pdfBlob, 
+  pageNumber, 
+  currentPageFields,
+  pageRef,
+  pageRect,
+  setPageRect,
+  onDocumentLoadSuccess 
+}) => {
+  return (
+    <Document
+      file={pdfBlob}
+      onLoadSuccess={onDocumentLoadSuccess}
+      loading={
+        <div className="flex justify-center items-center h-64">
+          Loading PDF...
+        </div>
+      }
+    >
+      <div className="relative" ref={pageRef}>
+        <Page 
+          pageNumber={pageNumber}
+          renderTextLayer={false}
+          renderAnnotationLayer={false}
+          loading=""
+          onRenderSuccess={() => {
+            if (!pageRect && pageRef.current) {
+              const rect = pageRef.current.getBoundingClientRect();
+              setPageRect(rect);
+            }
+          }}
+        />
+        
+        {pageRect && (
+          <FormFieldsOverlay
+            formFields={currentPageFields}
+            pageRect={pageRect}
+          />
+        )}
+      </div>
+    </Document>
+  );
+});
+
+// Navigation Controls component
+const NavigationControls = memo(({ 
+  pageNumber, 
+  numPages, 
+  onPrevious, 
+  onNext 
+}) => {
+  return (
+    <div className="mt-4 flex justify-center gap-4">
+      <button
+        className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
+        onClick={onPrevious}
+        disabled={pageNumber <= 1}
+      >
+        Previous
+      </button>
+      <p>
+        Page {pageNumber} of {numPages}
+      </p>
+      <button
+        className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
+        onClick={onNext}
+        disabled={pageNumber >= numPages}
+      >
+        Next
+      </button>
+    </div>
+  );
+});
+
+// Main PDFSigner component
+const PDFSigner = () => {
+  const [numPages, setNumPages] = useState(null);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [documentData, setDocumentData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [pageRect, setPageRect] = useState(null);
+  const { documentID } = useParams();
+  const pageRef = useRef(null);
+
   useEffect(() => {
     const fetchDocument = async () => {
       try {
@@ -152,13 +277,11 @@ const PDFSigner = () => {
     }
   }, [documentID]);
 
-  // Update pageRect when necessary
   useEffect(() => {
     const updatePageRect = () => {
       if (pageRef.current) {
         const rect = pageRef.current.getBoundingClientRect();
         setPageRect(prev => {
-          // Only update if the dimensions actually changed
           if (!prev || 
               prev.width !== rect.width || 
               prev.height !== rect.height || 
@@ -171,10 +294,7 @@ const PDFSigner = () => {
       }
     };
 
-    // Add resize listener
     window.addEventListener('resize', updatePageRect);
-    
-    // Initial update with a small delay to ensure PDF is rendered
     const timeoutId = setTimeout(updatePageRect, 100);
     
     return () => {
@@ -186,6 +306,14 @@ const PDFSigner = () => {
   const onDocumentLoadSuccess = useCallback(({ numPages }) => {
     setNumPages(numPages);
     setLoading(false);
+  }, []);
+
+  const handlePrevious = useCallback(() => {
+    setPageNumber(prev => prev - 1);
+  }, []);
+
+  const handleNext = useCallback(() => {
+    setPageNumber(prev => prev + 1);
   }, []);
 
   if (error) {
@@ -205,68 +333,35 @@ const PDFSigner = () => {
 
   return (
     <div className="relative">
-      <Document
-        file={pdfBlob}
-        onLoadSuccess={onDocumentLoadSuccess}
-        loading={
-          <div className="flex justify-center items-center h-64">
-            Loading PDF...
-          </div>
-        }
-      >
-        <div className="relative" ref={pageRef}>
-          <Page 
-            pageNumber={pageNumber}
-            renderTextLayer={false}
-            renderAnnotationLayer={false}
-            loading=""
-            onRenderSuccess={() => {
-              // Single update after initial render
-              if (!pageRect && pageRef.current) {
-                const rect = pageRef.current.getBoundingClientRect();
-                setPageRect(rect);
-              }
-            }}
-          />
-          
-          {pageRect && (
-            <FormFieldsOverlay
-              formFields={currentPageFields}
-              pageRect={pageRect}
-              onFieldValueChange={handleFieldValueChange}
-            />
-          )}
-        </div>
-      </Document>
+      <PDFViewer
+        pdfBlob={pdfBlob}
+        pageNumber={pageNumber}
+        currentPageFields={currentPageFields}
+        pageRef={pageRef}
+        pageRect={pageRect}
+        setPageRect={setPageRect}
+        onDocumentLoadSuccess={onDocumentLoadSuccess}
+      />
       
-      <button
-        className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        onClick={fillAndSavePDF}
-      >
-        Save Filled PDF
-      </button>
+      <SavePDFButton documentData={documentData} />
       
-      <div className="mt-4 flex justify-center gap-4">
-        <button
-          className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
-          onClick={() => setPageNumber(pageNumber - 1)}
-          disabled={pageNumber <= 1}
-        >
-          Previous
-        </button>
-        <p>
-          Page {pageNumber} of {numPages}
-        </p>
-        <button
-          className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
-          onClick={() => setPageNumber(pageNumber + 1)}
-          disabled={pageNumber >= numPages}
-        >
-          Next
-        </button>
-      </div>
+      <NavigationControls
+        pageNumber={pageNumber}
+        numPages={numPages}
+        onPrevious={handlePrevious}
+        onNext={handleNext}
+      />
     </div>
   );
 };
 
-export default PDFSigner;
+// Wrapper component with context provider
+const PDFSignerWrapper = () => {
+  return (
+    <FormFieldsProvider>
+      <PDFSigner />
+    </FormFieldsProvider>
+  );
+};
+
+export default PDFSignerWrapper;

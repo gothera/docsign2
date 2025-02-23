@@ -2,17 +2,14 @@ import { useState, useEffect, useRef, memo, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import ChatPanel from './ChatPanel';
+import SessionControls from './SessionControls';
 
 if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = import.meta.env.VITE_PATH_TO_ROOT + 'public/pdfjs/pdf.worker.min.js'
 }
 
-// Individual form field input with local state
-const FormFieldInput = memo(({ 
-  field, 
-  pageRect,
-  onValueChange 
-}) => {
+const FormFieldInput = memo(({ field, pageRect, onValueChange, isSigned }) => {
   const [value, setValue] = useState('');
   const adjustedX = field.x + pageRect.left;
   const adjustedY = field.y + pageRect.top;
@@ -39,6 +36,7 @@ const FormFieldInput = memo(({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={handleBlur}
+        disabled={isSigned}
         className="w-full h-full px-1 bg-transparent border-none focus:outline-none text-black"
         style={{
           fontSize: '12px',
@@ -49,12 +47,7 @@ const FormFieldInput = memo(({
   );
 });
 
-// Form fields container
-const FormFieldsOverlay = memo(({ 
-  formFields, 
-  pageRect,
-  onFieldValueChange
-}) => {
+const FormFieldsOverlay = memo(({ formFields, pageRect, onFieldValueChange, isSigned }) => {
   return (
     <div className="absolute inset-0">
       {formFields.map((field) => (
@@ -63,6 +56,7 @@ const FormFieldsOverlay = memo(({
           field={field}
           pageRect={pageRect}
           onValueChange={onFieldValueChange}
+          isSigned={isSigned}
         />
       ))}
     </div>
@@ -79,6 +73,11 @@ const PDFSigner = () => {
   const { documentID } = useParams();
   const pageRef = useRef(null);
   const fieldValuesRef = useRef({});
+  const [signedPdfBlob, setSignedPdfBlob] = useState(null);
+  const [filledPdfBlob, setFilledPdfBlob] = useState(null);
+  const [isSigned, setIsSigned] = useState(false);
+  const [documentContent, setDocumentContent] = useState(null);
+  const [pdfBlob, setPdfBlob] = useState(null);
 
   const handleFieldValueChange = useCallback((fieldId, value) => {
     fieldValuesRef.current[fieldId] = value;
@@ -120,6 +119,7 @@ const PDFSigner = () => {
       
       const modifiedPdfBytes = await pdfDoc.save();
       const modifiedPdfBlob = new Blob([modifiedPdfBytes], { type: 'application/pdf' });
+      setFilledPdfBlob(modifiedPdfBlob);
       
       const downloadLink = document.createElement('a');
       downloadLink.href = URL.createObjectURL(modifiedPdfBlob);
@@ -130,6 +130,153 @@ const PDFSigner = () => {
       console.error('Error filling PDF:', error);
     }
   };
+
+  const handleSignPDF = async () => {
+    try {
+      const formData = new FormData();
+      const pdfToSign = filledPdfBlob || pdfBlob;  // Use filled PDF if available
+      const response = await fetch(typeof pdfToSign === 'string' ? pdfToSign : URL.createObjectURL(pdfToSign));
+      const blob = await response.blob();
+      formData.append('pdf', blob, 'document.pdf');
+      formData.append('document_id', documentID);
+  
+      const signResponse = await fetch('http://localhost:8000/sign', {
+        method: 'POST',
+        body: formData,
+      });
+  
+      if (!signResponse.ok) {
+        throw new Error('Failed to sign document');
+      }
+  
+      const data = await signResponse.json();
+      const signedPdfBytes = Uint8Array.from(atob(data.signed_pdf), c => c.charCodeAt(0));
+      const signedBlob = new Blob([signedPdfBytes], { type: 'application/pdf' });
+      setSignedPdfBlob(URL.createObjectURL(signedBlob));
+      setIsSigned(true);  // Mark document as signed
+    } catch (err) {
+      console.error('Error signing PDF: ', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const extractPdfContent = async (pdfBlob) => {
+    try {
+      const response = await fetch(typeof pdfBlob === 'string' ? pdfBlob : URL.createObjectURL(pdfBlob));
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+      const pdfDoc = await PDFDocument.load(arrayBuffer);
+      const pages = pdfDoc.getPages();
+      let textContent = '';
+      for (const page of pages) {
+        const text = await page.getTextContent();
+        textContent += text.items.map(item => item.str).join(' ') + '\n';
+      }
+      setDocumentContent({ type: 'document', content: textContent });
+    } catch (error) {
+      console.error('Error extracting PDF content:', error);
+    }
+  };
+  
+  useEffect(() => {
+    const currentPdf = signedPdfBlob || filledPdfBlob || pdfBlob;
+    if (currentPdf) extractPdfContent(currentPdf);
+  }, [signedPdfBlob, filledPdfBlob, pdfBlob]);
+
+  // ========= reused stuff from App.jsx should be extracted somehow =================
+  const [isSessionActive, setIsSessionActive] = useState(false);
+  const [events, setEvents] = useState([]);
+  const [dataChannel, setDataChannel] = useState(null);
+  const peerConnection = useRef(null);
+  const audioElement = useRef(null);
+
+  async function startSession() {
+    const tokenResponse = await fetch("/token");
+    const data = await tokenResponse.json();
+    const EPHEMERAL_KEY = data.client_secret.value;
+
+    const pc = new RTCPeerConnection();
+    
+    audioElement.current = document.createElement("audio");
+    audioElement.current.autoplay = true;
+    pc.ontrack = (e) => (audioElement.current.srcObject = e.streams[0]);
+
+    const audioContext = new AudioContext();
+    let ms = audioContext.createMediaStreamDestination().stream;
+    if (import.meta.env?.VITE_USE_MIC?.toLowerCase?.() === 'true') {
+      ms = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
+    pc.addTrack(ms.getTracks()[0]);
+
+    const dc = pc.createDataChannel("oai-events");
+    setDataChannel(dc);
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    const baseUrl = "https://api.openai.com/v1/realtime";
+    const model = "gpt-4o-realtime-preview-2024-12-17";
+    const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
+      method: "POST",
+      body: offer.sdp,
+      headers: {
+        Authorization: `Bearer ${EPHEMERAL_KEY}`,
+        "Content-Type": "application/sdp",
+      },
+    });
+
+    const answer = { type: "answer", sdp: await sdpResponse.text() };
+    await pc.setRemoteDescription(answer);
+
+    peerConnection.current = pc;
+  }
+
+  function stopSession() {
+    if (dataChannel) dataChannel.close();
+    if (peerConnection.current) peerConnection.current.close();
+
+    setIsSessionActive(false);
+    setDataChannel(null);
+    peerConnection.current = null;
+  }
+
+  function sendClientEvent(message) {
+    if (dataChannel) {
+      message.event_id = message.event_id || crypto.randomUUID();
+      dataChannel.send(JSON.stringify(message));
+      setEvents((prev) => [message, ...prev]);
+    } else {
+      console.error("Failed to send message - no data channel available", message);
+    }
+  }
+
+  function sendTextMessage(message) {
+    const event = {
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: message }],
+      },
+    };
+    sendClientEvent(event);
+    sendClientEvent({ type: "response.create" });
+  }
+
+  useEffect(() => {
+    if (dataChannel) {
+      dataChannel.addEventListener("message", (e) => {
+        setEvents((prev) => [JSON.parse(e.data), ...prev]);
+      });
+      dataChannel.addEventListener("open", () => {
+        setIsSessionActive(true);
+        setEvents([]);
+      });
+    }
+  }, [dataChannel]);
+  // ========= end of reused stuff from App.jsx should be extracted somehow =================
 
   useEffect(() => {
     const fetchDocument = async () => {
@@ -192,9 +339,10 @@ const PDFSigner = () => {
     return <div className="text-red-500">Error: {error}</div>;
   }
 
-  const pdfBlob = documentData?.pdf 
+  setPdfBlob(documentData?.pdf 
     ? URL.createObjectURL(new Blob([Uint8Array.from(atob(documentData.pdf), c => c.charCodeAt(0))], { type: 'application/pdf' }))
-    : null;
+    : null
+  )
 
   const currentPageFields = documentData?.form_fields
     ?.filter(field => field.pageNumber === pageNumber) || [];
@@ -204,9 +352,10 @@ const PDFSigner = () => {
   }
 
   return (
-    <div className="relative">
+  <div className="flex h-screen">
+    <div className="flex-1 relative overflow-auto">
       <Document
-        file={pdfBlob}
+        file={signedPdfBlob || filledPdfBlob || pdfBlob}
         onLoadSuccess={onDocumentLoadSuccess}
         loading={
           <div className="flex justify-center items-center h-64">
@@ -221,7 +370,6 @@ const PDFSigner = () => {
             renderAnnotationLayer={false}
             loading=""
             onRenderSuccess={() => {
-              // Single update after initial render
               if (!pageRect && pageRef.current) {
                 const rect = pageRef.current.getBoundingClientRect();
                 setPageRect(rect);
@@ -229,22 +377,33 @@ const PDFSigner = () => {
             }}
           />
           
-          {pageRect && (
+          {pageRect && !isSigned && (
             <FormFieldsOverlay
               formFields={currentPageFields}
               pageRect={pageRect}
               onFieldValueChange={handleFieldValueChange}
+              isSigned={isSigned} 
             />
           )}
         </div>
       </Document>
       
-      <button
-        className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        onClick={fillAndSavePDF}
-      >
-        Save Filled PDF
-      </button>
+      {!isSigned && (  
+        <div className="mt-4 flex justify-center gap-4">
+          <button
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            onClick={fillAndSavePDF}
+          >
+            Save Filled PDF
+          </button>
+          <button
+            className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+            onClick={handleSignPDF}
+          >
+            Sign
+          </button>
+        </div>
+      )}
       
       <div className="mt-4 flex justify-center gap-4">
         <button
@@ -266,6 +425,24 @@ const PDFSigner = () => {
         </button>
       </div>
     </div>
+    <section className="w-[300px] flex flex-col border-l border-gray-200">
+      <div className="flex-1 overflow-y-auto p-4">
+        <ChatPanel events={events} />
+      </div>
+      <div className="p-4 border-t border-gray-200">
+        <SessionControls
+          startSession={startSession}
+          stopSession={stopSession}
+          sendClientEvent={sendClientEvent}
+          sendTextMessage={sendTextMessage}
+          isSessionActive={isSessionActive}
+          documentContent={documentContent}
+          setDocumentContent={setDocumentContent}
+          events={events}
+        />
+      </div>
+    </section>
+  </div>
   );
 };
 

@@ -1,5 +1,9 @@
 import os
 
+introduction = '''I will give you the code. Please wait to tell you what I wnat to add or modify and try to be concise, tell me just wnat to add or modify, do not repete the hole text. thanks
+btw, we are using a separat python server as backend for the rest api and it is available at localhost 8000, but i didn't gave you the code for that
+'''
+
 def collectReactFiles():
     # Define the output file name
     outputFileName = "combinedReactCode.txt"
@@ -8,7 +12,7 @@ def collectReactFiles():
     targetExtensions = ('.js', '.jsx', '.html', '.css', '.cjs', '.json')
     
     # Initialize content list
-    allCodeContent = []
+    allCodeContent = [introduction]
     
     # Get files from root directory
     for fileName in os.listdir('.'):

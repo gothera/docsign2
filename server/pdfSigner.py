@@ -32,13 +32,16 @@ def signPDF(pdfPath: str, userName: str, userEmail: str, outputFile: str,
     fontSize = height
     if textWidth > width:
         fontSize = height * (width / textWidth)
-    
-    print(fontSize)
+
+    reader = PdfReader(pdfPath)
+    page = reader.pages[pageNum]
+    pageHeight = float(page.mediabox.height)
+
     can.setFont(fontName, fontSize)
-    can.drawString(x ,y, userName)
+    can.drawString(x, pageHeight - y - fontSize, userName)
     can.save()
 
-    reader, writer = PdfReader(pdfPath), PdfWriter()
+    writer = PdfWriter()
     
     for i in range(0, pageNum):
         writer.add_page(reader.pages[i])

@@ -7,6 +7,54 @@ if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = import.meta.env.VITE_PATH_TO_ROOT + 'public/pdfjs/pdf.worker.min.js'
 }
 
+const generateFilledPDF = async (documentData, fieldValues, setFilledPdfBlob) => {
+  try {
+    const pdfBlob = documentData?.pdf 
+      ? URL.createObjectURL(new Blob([Uint8Array.from(atob(documentData.pdf), c => c.charCodeAt(0))], { type: 'application/pdf' }))
+      : null;
+
+    let existingPdfBytes;
+    if (pdfBlob instanceof Blob || pdfBlob instanceof File) {
+      existingPdfBytes = await new Response(pdfBlob).arrayBuffer();
+    } else if (pdfBlob instanceof ArrayBuffer) {
+      existingPdfBytes = pdfBlob;
+    } else if (typeof pdfBlob === 'string') {
+      const response = await fetch(pdfBlob);
+      existingPdfBytes = await response.arrayBuffer();
+    } else {
+      throw new Error('Unsupported PDF input format');
+    }
+    
+    const pdfDoc = await PDFDocument.load(existingPdfBytes);
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const pages = pdfDoc.getPages();
+    
+    for (const field of documentData.form_fields) {
+      const page = pages[field.pageNumber - 1];
+      const { width, height } = page.getSize();
+      const fieldValue = fieldValues[field.id] || '';
+      const yPosition = height - (field.y + field.height / 2);
+      
+      page.drawText(fieldValue, {
+        x: field.x,
+        y: yPosition,
+        size: 12,
+        font: font,
+        lineHeight: field.height,
+        color: rgb(0, 0, 0),
+      });
+    }
+    
+    const modifiedPdfBytes = await pdfDoc.save();
+    const modifiedPdfBlob = new Blob([modifiedPdfBytes], { type: 'application/pdf' });
+    setFilledPdfBlob(modifiedPdfBlob);
+    return modifiedPdfBlob;
+  } catch (error) {
+    console.error('Error generating filled PDF:', error);
+    throw error;
+  }
+};
+
 // Create context for form field values
 const FormFieldsContext = createContext();
 
@@ -105,56 +153,65 @@ const FormFieldsOverlay = memo(({
   );
 });
 
+const SignButton = memo(({ documentData, filledPdfBlob, setError, setIsSigned, setFilledPdfBlob, setSignedPdfBlob }) => {
+  const { fieldValues } = useFormFields();
+
+  const handleSign = async () => {
+    try {
+      if (!documentData) {
+        throw new Error('Document data not yet loaded');
+      }
+      const formData = new FormData();
+
+      let pdfBlob = filledPdfBlob ;
+      if (!pdfBlob) {
+        pdfBlob = await generateFilledPDF(documentData, fieldValues, setFilledPdfBlob);;
+      }
+
+      // Append the Blob to formData
+      formData.append('pdf', pdfBlob, 'document.pdf');
+      formData.append('document_id', documentData.id);
+
+      const response = await fetch('http://localhost:8000/sign', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) throw new Error('Failed to sign document');
+      
+      const signedData = await response.json();
+      const signedPdfBytes = Uint8Array.from(atob(signedData.signed_pdf), c => c.charCodeAt(0));
+      const signedBlob = new Blob([signedPdfBytes], { type: 'application/pdf' });
+      setSignedPdfBlob(signedBlob);
+      setIsSigned(true);
+    } catch (err) {
+      console.error('Error signing PDF:', err);
+      setError(err.message)
+    }
+  };
+
+  return (
+    <button
+      className="mt-4 ml-4 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+      onClick={handleSign}
+    >
+      Sign Document
+    </button>
+  );
+});
+
 // Save PDF Button component that handles PDF generation
-const SavePDFButton = memo(({ documentData }) => {
+const SavePDFButton = memo(({ documentData, setFilledPdfBlob }) => {
   const { fieldValues } = useFormFields();
 
   const fillAndSavePDF = async () => {
     try {
-      const pdfBlob = documentData?.pdf 
-        ? URL.createObjectURL(new Blob([Uint8Array.from(atob(documentData.pdf), c => c.charCodeAt(0))], { type: 'application/pdf' }))
-        : null;
-
-      let existingPdfBytes;
-      if (pdfBlob instanceof Blob || pdfBlob instanceof File) {
-        existingPdfBytes = await new Response(pdfBlob).arrayBuffer();
-      } else if (pdfBlob instanceof ArrayBuffer) {
-        existingPdfBytes = pdfBlob;
-      } else if (typeof pdfBlob === 'string') {
-        const response = await fetch(pdfBlob);
-        existingPdfBytes = await response.arrayBuffer();
-      } else {
-        throw new Error('Unsupported PDF input format');
-      }
-      
-      const pdfDoc = await PDFDocument.load(existingPdfBytes);
-      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      const pages = pdfDoc.getPages();
-      
-      for (const field of documentData.form_fields) {
-        const page = pages[field.pageNumber - 1];
-        const { width, height } = page.getSize();
-        const fieldValue = fieldValues[field.id] || '';
-        const yPosition = height - (field.y + field.height / 2);
-        
-        page.drawText(fieldValue, {
-          x: field.x,
-          y: yPosition,
-          size: 12,
-          font: font,
-          lineHeight: field.height,
-          color: rgb(0, 0, 0),
-        });
-      }
-      
-      const modifiedPdfBytes = await pdfDoc.save();
-      const modifiedPdfBlob = new Blob([modifiedPdfBytes], { type: 'application/pdf' });
+      const modifiedPdfBlob = await generateFilledPDF(documentData, fieldValues, setFilledPdfBlob);
       
       const downloadLink = document.createElement('a');
       downloadLink.href = URL.createObjectURL(modifiedPdfBlob);
       downloadLink.download = 'filled_form.pdf';
       downloadLink.click();
-      
     } catch (error) {
       console.error('Error filling PDF:', error);
     }
@@ -178,7 +235,8 @@ const PDFViewer = memo(({
   pageRef,
   pageRect,
   setPageRect,
-  onDocumentLoadSuccess 
+  onDocumentLoadSuccess,
+  isSigned
 }) => {
   return (
     <Document
@@ -204,7 +262,7 @@ const PDFViewer = memo(({
           }}
         />
         
-        {pageRect && (
+        {pageRect && !isSigned && (
           <FormFieldsOverlay
             formFields={currentPageFields}
             pageRect={pageRect}
@@ -253,6 +311,9 @@ const PDFSigner = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [pageRect, setPageRect] = useState(null);
+  const [isSigned, setIsSigned] = useState(false);
+  const [signedPdfBlob, setSignedPdfBlob] = useState(null);
+  const [filledPdfBlob, setFilledPdfBlob] = useState(null);
   const { documentID } = useParams();
   const pageRef = useRef(null);
 
@@ -323,6 +384,7 @@ const PDFSigner = () => {
   const pdfBlob = documentData?.pdf 
     ? URL.createObjectURL(new Blob([Uint8Array.from(atob(documentData.pdf), c => c.charCodeAt(0))], { type: 'application/pdf' }))
     : null;
+  
 
   const currentPageFields = documentData?.form_fields
     ?.filter(field => field.pageNumber === pageNumber) || [];
@@ -334,16 +396,32 @@ const PDFSigner = () => {
   return (
     <div className="relative">
       <PDFViewer
-        pdfBlob={pdfBlob}
+        pdfBlob={signedPdfBlob || pdfBlob}
         pageNumber={pageNumber}
         currentPageFields={currentPageFields}
         pageRef={pageRef}
         pageRect={pageRect}
         setPageRect={setPageRect}
         onDocumentLoadSuccess={onDocumentLoadSuccess}
+        isSigned={isSigned}
       />
       
-      <SavePDFButton documentData={documentData} />
+      {!isSigned && (
+        <>
+          <SavePDFButton 
+            documentData={documentData}
+            setFilledPdfBlob={setFilledPdfBlob}
+          />
+          <SignButton 
+            documentData={documentData}
+            filledPdfBlob={filledPdfBlob}
+            setError={setError}
+            setFilledPdfBlob={setFilledPdfBlob}
+            setSignedPdfBlob={setSignedPdfBlob}
+            setIsSigned={setIsSigned}
+          />
+        </>
+      )}
       
       <NavigationControls
         pageNumber={pageNumber}

@@ -205,28 +205,28 @@ async def sign(
     except base64.binascii.Error as e:
         raise ValueError(f"Couldn't get bytes or couldn't save file: {e}")
 
-    try:
+    # try:
         # find signature form field
-        signff = None
-        for ff in document.formFields:
-            if ff['type'] == 'Signature':
-                signff = ff
+    signff = None
+    for ff in document.formFields:
+        if ff['type'] == 'Signature':
+            signff = ff
+    
+    if signff:
+        pdfSigner.signPDF(document.pdfPath, document.metadata.signerName, document.metadata.signerEmail, document.signPdfPath, 
+                            pageNum=ff['pageNumber'] - 1, x=ff['x'], y=ff['y'], width=ff['width'], height=ff['height'])
+    else:
+        pdfSigner.signPDF(document.pdfPath, document.metadata.signerName, document.metadata.signerEmail, document.signPdfPath)
+    
+    document.metadata.status = DocumentStatus.SIGNED
+    document.save()
+    with open(document.signPdfPath, 'rb') as file:
+        documentBytes = file.read()
+        base64Encoded = base64.b64encode(documentBytes).decode('utf-8')
         
-        if signff:
-            pdfSigner.signPDF(document.pdfPath, document.metadata.signerName, document.metadata.signerEmail, document.signPdfPath, 
-                              pageNum=ff['pageNumber'] - 1, x=ff['x'], y=ff['y'], width=ff['width'], height=ff['height'])
-        else:
-            pdfSigner.signPDF(document.pdfPath, document.metadata.signerName, document.metadata.signerEmail, document.signPdfPath)
-        
-        document.metadata.status = DocumentStatus.SIGNED
-        document.save()
-        with open(document.signPdfPath, 'rb') as file:
-            documentBytes = file.read()
-            base64Encoded = base64.b64encode(documentBytes).decode('utf-8')
-            
-        return JSONResponse(status_code=200, content={'id': document.id, 'signed_pdf': base64Encoded})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Error retrieving document: {str(e)}')
+    return JSONResponse(status_code=200, content={'id': document.id, 'signed_pdf': base64Encoded})
+    # except Exception as e:
+    #     raise HTTPException(status_code=500, detail=f'Error retrieving document: {str(e)}')
 
 
 @app.get('/documents')

@@ -48,7 +48,7 @@ function SessionActive({ stopSession, sendTextMessage, sendClientEvent, isSessio
     if (!isSessionActive) {
       setFunctionAdded(false);
     }
-  }, [isSessionActive, documentContent, sendClientEvent]);
+  }, [isSessionActive, documentContent]);
 
   function handleSendClientEvent() {
     sendTextMessage(message);

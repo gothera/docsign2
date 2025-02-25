@@ -34,11 +34,13 @@ function DocumentViewer({ documentContent, onDocumentUpload, filename, setFilena
     const newContent = event.target.innerHTML;
     // Only update if content has actually changed
     if (newContent !== documentContent.content) {
-      onDocumentUpload({
+      const content = {
         type: 'document',
         content: newContent,
         messages: documentContent.messages
-      });
+      };
+      console.log('Document upload handler called with content:', content);
+      onDocumentUpload(content);
     }
   };
 

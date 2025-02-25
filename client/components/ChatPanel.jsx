@@ -20,7 +20,8 @@ function ChatMessage({ event, timestamp }) {
     );
   }
 
-  if (event.type === "response.audio_transcript.done" || event.type === "response.done") {
+  // if (event.type === "response.audio_transcript.done" || event.type === "response.done") {
+  if (event.type === "response.done") {
     let textOutput = event?.transcript
     if (event.type === "response.done") {
       const output = event.response.output[0]

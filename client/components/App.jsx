@@ -3,6 +3,7 @@ import ChatPanel from "./ChatPanel";
 import SessionControls from "./SessionControls";
 import DocumentViewer from "./DocumentViewer";
 import Sidebar from './Sidebar';
+import { startWebRTCConnection, stopWebRTCConnection, sendClientEvent } from "../utils/webRTC.jsx";
 
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -14,78 +15,23 @@ export default function App() {
   const audioElement = useRef(null);
 
   async function startSession() {
-    const tokenResponse = await fetch("/token");
-    const data = await tokenResponse.json();
-    const EPHEMERAL_KEY = data.client_secret.value;
-
-    const pc = new RTCPeerConnection();
-    
-    // Set up to play remote audio from the model
-    audioElement.current = document.createElement("audio");
-    audioElement.current.autoplay = true;
-    pc.ontrack = (e) => (audioElement.current.srcObject = e.streams[0]);
-
-    const audioContext = new AudioContext();
-    let ms = audioContext.createMediaStreamDestination().stream;
-    if (import.meta.env?.VITE_USE_MIC?.toLowerCase?.() === 'true') {
-      console.log('use mic')
-      // Add local audio track for microphone input in the browser
-      ms = await navigator.mediaDevices.getUserMedia({audio: true});
-    }
-    pc.addTrack(ms.getTracks()[0]);
-
-    // Set up data channel for sending and receiving events
-    const dc = pc.createDataChannel("oai-events");
-    setDataChannel(dc);
-
-    // Start the session using the Session Description Protocol (SDP)
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    const baseUrl = "https://api.openai.com/v1/realtime";
-    const model = "gpt-4o-realtime-preview-2024-12-17";
-    const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
-      method: "POST",
-      body: offer.sdp,
-      headers: {
-        Authorization: `Bearer ${EPHEMERAL_KEY}`,
-        "Content-Type": "application/sdp",
-      },
-    });
-
-    const answer = {
-      type: "answer",
-      sdp: await sdpResponse.text(),
-    };
-    await pc.setRemoteDescription(answer);
-
+    const { peerConnection: pc, audioElement: audio } = await startWebRTCConnection(setDataChannel, setIsSessionActive);
     peerConnection.current = pc;
+    audioElement.current = audio;
   }
 
   function stopSession() {
-    if (dataChannel) {
-      dataChannel.close();
-    }
-    if (peerConnection.current) {
-      peerConnection.current.close();
-    }
-
+    stopWebRTCConnection(peerConnection.current, dataChannel);
     setIsSessionActive(false);
     setDataChannel(null);
     peerConnection.current = null;
   }
 
-  function sendClientEvent(message) {
-    if (dataChannel) {
-      message.event_id = message.event_id || crypto.randomUUID();
-      dataChannel.send(JSON.stringify(message));
-      setEvents((prev) => [message, ...prev]);
-    } else {
-      console.error("Failed to send message - no data channel available", message);
-    }
+  function sendClientEventWrapper(message) {
+    sendClientEvent(dataChannel, message, setEvents);
   }
 
-  // Send a text message to the model
+  // Replace sendTextMessage to use sendClientEventWrapper
   function sendTextMessage(message) {
     const event = {
       type: "conversation.item.create",
@@ -100,25 +46,14 @@ export default function App() {
         ],
       },
     };
-
-    sendClientEvent(event);
-    sendClientEvent({ type: "response.create" });
-  }
-
-  function handleDocumentUpload(content) {
-    console.log('Document upload handler called with content:', content);
-    setDocumentContent(content);
+    sendClientEventWrapper(event);
+    sendClientEventWrapper({ type: "response.create" });
   }
 
   useEffect(() => {
     if (dataChannel) {
       dataChannel.addEventListener("message", (e) => {
         setEvents((prev) => [JSON.parse(e.data), ...prev]);
-      });
-
-      dataChannel.addEventListener("open", () => {
-        setIsSessionActive(true);
-        setEvents([]);
       });
     }
   }, [dataChannel]);
@@ -134,7 +69,7 @@ export default function App() {
           <section className="absolute top-0 left-0 right-[300px] bottom-0 px-4 overflow-y-auto">
             <DocumentViewer 
               documentContent={documentContent} 
-              onDocumentUpload={handleDocumentUpload}
+              onDocumentUpload={setDocumentContent}
               filename={filename}
               setFilename={setFilename}
             />
@@ -147,7 +82,7 @@ export default function App() {
               <SessionControls
                 startSession={startSession}
                 stopSession={stopSession}
-                sendClientEvent={sendClientEvent}
+                sendClientEvent={sendClientEventWrapper}
                 sendTextMessage={sendTextMessage}
                 isSessionActive={isSessionActive}
                 filename={filename}

@@ -2,9 +2,15 @@ import { useState, useEffect, useRef, memo, useCallback, createContext, useConte
 import { useParams } from 'react-router-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import * as pdfjsLib from 'pdfjs-dist';
+import Tesseract from 'tesseract.js';
+import ChatPanel from './ChatPanel';
+import SessionControls from './SessionControls';
+import { startWebRTCConnection, stopWebRTCConnection, sendClientEvent } from '../utils/webRTC.jsx';
 
 if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = import.meta.env.VITE_PATH_TO_ROOT + 'public/pdfjs/pdf.worker.min.js'
+  pdfjsLib.GlobalWorkerOptions.workerSrc = import.meta.env.VITE_PATH_TO_ROOT + 'public/pdfjs/pdf.worker.min.js';
 }
 
 const generateFilledPDF = async (documentData, fieldValues, setFilledPdfBlob) => {
@@ -304,7 +310,7 @@ const NavigationControls = memo(({
 });
 
 // Main PDFSigner component
-const PDFSigner = () => {
+const PDFSigner = ({ setPdfText }) => {
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [documentData, setDocumentData] = useState(null);
@@ -326,16 +332,44 @@ const PDFSigner = () => {
         }
         const data = await response.json();
         setDocumentData(data);
+
+        console.log(pdfjsLib.GlobalWorkerOptions.workerSrc)
+        const pdfBlob = new Blob([Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0))], { type: 'application/pdf' });
+        const arrayBuffer = await pdfBlob.arrayBuffer();
+        const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+        
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          let pageText = textContent.items.map(item => item.str).join(' ');
+  
+          // Fallback to OCR if no text is extracted
+          if (!pageText.trim()) {
+            // console.log(`No text on page ${i}, attempting OCR`);
+            const canvas = document.createElement('canvas');
+            const viewport = page.getViewport({ scale: 2 }); // Higher scale for better OCR
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            const context = canvas.getContext('2d');
+            await page.render({ canvasContext: context, viewport }).promise;
+            
+            const { data: { text } } = await Tesseract.recognize(canvas, 'eng');
+            pageText = text;
+            console.log(`Finished OCR on page ${i}`);
+          }
+          fullText += pageText + '\n';
+        }
+        setPdfText(fullText.trim())
       } catch (err) {
-        setError(err.message);
+        console.log(err.message);
       } finally {
         setLoading(false);
       }
     };
 
-    if (documentID) {
-      fetchDocument();
-    }
+    if (documentID) fetchDocument();
+
   }, [documentID]);
 
   useEffect(() => {
@@ -405,13 +439,9 @@ const PDFSigner = () => {
         onDocumentLoadSuccess={onDocumentLoadSuccess}
         isSigned={isSigned}
       />
-      
       {!isSigned && (
         <>
-          <SavePDFButton 
-            documentData={documentData}
-            setFilledPdfBlob={setFilledPdfBlob}
-          />
+          <SavePDFButton documentData={documentData} setFilledPdfBlob={setFilledPdfBlob} />
           <SignButton 
             documentData={documentData}
             filledPdfBlob={filledPdfBlob}
@@ -422,7 +452,6 @@ const PDFSigner = () => {
           />
         </>
       )}
-      
       <NavigationControls
         pageNumber={pageNumber}
         numPages={numPages}
@@ -433,11 +462,86 @@ const PDFSigner = () => {
   );
 };
 
-// Wrapper component with context provider
 const PDFSignerWrapper = () => {
+  const [isSessionActive, setIsSessionActive] = useState(false);
+  const [events, setEvents] = useState([]);
+  const [dataChannel, setDataChannel] = useState(null);
+  const [pdfText, setPdfText] = useState(null);
+  const peerConnection = useRef(null);
+  const audioElement = useRef(null);
+
+  async function startSession() {
+    const { peerConnection: pc, audioElement: audio } = await startWebRTCConnection(setDataChannel, setIsSessionActive);
+    peerConnection.current = pc;
+    audioElement.current = audio;
+  }
+
+  function stopSession() {
+    stopWebRTCConnection(peerConnection.current, dataChannel);
+    setIsSessionActive(false);
+    setDataChannel(null);
+    peerConnection.current = null;
+  }
+
+  function sendClientEventWrapper(message) {
+    sendClientEvent(dataChannel, message, setEvents);
+  }
+
+  function sendTextMessage(message) {
+    const event = {
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: message }],
+      },
+    };
+    sendClientEventWrapper(event);
+    sendClientEventWrapper({ type: "response.create" });
+  }
+
+  useEffect(() => {
+    console.log(`This is the content of the PDF document: ${pdfText}`)
+    if (dataChannel) {
+      dataChannel.addEventListener("message", (e) => {
+        setEvents((prev) => [JSON.parse(e.data), ...prev]);
+      });
+      // Send PDF content as instructions when session opens
+      if (isSessionActive && pdfText) {
+        const sessionUpdate = {
+          type: "session.update",
+          session: {
+            instructions: `This is the content of the PDF document: ${pdfText}`,
+          },
+        };
+        console.log(`Sent the content of the PDF document: ${pdfText}`)
+        sendClientEventWrapper(sessionUpdate);
+      }
+    }
+  }, [dataChannel, isSessionActive, pdfText]);
+
   return (
     <FormFieldsProvider>
-      <PDFSigner />
+      <div className="flex h-screen">
+        <section className="flex-1 overflow-y-auto p-4">
+          <PDFSigner setPdfText={setPdfText} />
+        </section>
+        <section className="w-[300px] flex flex-col border-l border-gray-200">
+          <div className="flex-1 overflow-y-auto p-4">
+            <ChatPanel events={events} />
+          </div>
+          <div className="p-4 border-t border-gray-200">
+            <SessionControls
+              startSession={startSession}
+              stopSession={stopSession}
+              sendClientEvent={sendClientEventWrapper}
+              sendTextMessage={sendTextMessage}
+              isSessionActive={isSessionActive}
+              events={events}
+            />
+          </div>
+        </section>
+      </div>
     </FormFieldsProvider>
   );
 };
